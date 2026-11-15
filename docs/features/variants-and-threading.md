@@ -1,9 +1,9 @@
 # wasm variants, detection and threading
 
-> **Status:** PARTIAL — the four variants decode every fixture exactly in Node, and play in Chromium, Firefox and WebKit, the threads builds on real Workers; a thread Worker that never starts hangs the decoder and every later reset of it, and the threads hook is on an unmerged rivet-h26x branch.
+> **Status:** PARTIAL — the four variants decode every fixture exactly in Node, and play in Chromium, Firefox and WebKit, the threads builds on real Workers; a thread Worker that never starts hangs the decoder and every later reset of it, WebKit runs out of memory after many threads-build instances in one page, and the threads hook is on an unmerged rivet-h26x branch.
 > **Owners (code):** `js/detect.js`, `js/loader.js`, `src/threads.rs`, `js/thread-worker.js`, `scripts/build.sh`, `tools/wasm-copy-guard`, `Cargo.toml`
 > **Related docs:** [js-api-and-worker.md](./js-api-and-worker.md), [build-and-release.md](./build-and-release.md), [`../performance.md`](../performance.md), [`../integration.md`](../integration.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 
@@ -23,8 +23,10 @@ rivet-av1 had one long-lived pool per instance; rivet-h26x makes a pool per
 decoder and lets it go when the decoder is dropped, so `src/threads.rs`
 keeps the Workers and gives them pool workers to run, one after another.
 
-What the variants buy in speed is measured separately: see
-[`../performance.md`](../performance.md).
+What the variants buy in speed was measured on 2026-11-15 in Chromium,
+WebKit and Firefox, on CI's build in `pkg/`: see
+[`../performance.md`](../performance.md), which also explains why H.265
+scales differently from H.264 with threads.
 
 | Variant | Rust flags (`scripts/build.sh:113-121`) | Engines |
 |---|---|---|
@@ -180,6 +182,17 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
 - **Two decoders on one instance** share the Workers: each asks for its own
   pool workers, and `Slots` hands them to whichever Workers are free, so
   two 8-thread H.265 decoders at once take up to 36 Workers.
+- **WebKit runs out of memory after many threads-build instances in one
+  page.** Every instance of a threads build has its own shared memory,
+  declared with a 1 GiB maximum (`THREADS_LINK`, `scripts/build.sh:62`),
+  and each `WorkerDecoder` is a Worker with an instance of its own. In one
+  WebKit page, after about 36 such instances had been created and their
+  Workers terminated, `new WebAssembly.Memory` failed with out of memory
+  for every later one, and single-threaded instances in the same page ran
+  at about two thirds of their usual rate; a fresh page was unaffected
+  ([`../performance.md`](../performance.md), "WebKit and many
+  instances"). Reuse one decoder (`flush()` / `setSource()`) rather than
+  make one per video.
 - **Memory** is bounded by the 1 GiB a threads build may grow to
   (`scripts/build.sh:62`); what rivet-h26x holds for frame threading was
   not measured. An allocation the heap cannot meet aborts the instance.
@@ -187,7 +200,8 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
   the decoder would block the main thread. `H26xPlayer` without
   `worker: true` never asks for a threads build (`js/player.js:103-104`).
 - The loader caches runtimes forever (`js/loader.js:24`); every decoder in
-  a context shares one wasm instance and one memory, which grows and never
+  a context (one decode Worker, or the page) shares one wasm instance and
+  one memory, which grows and never
   shrinks, and the Workers live as long as the instance.
 - Unlike wasm-av1's, `test/browser.mjs` has no live-push case (units pushed
   on several threads with no end of stream), so the re-poll path is only
@@ -207,6 +221,8 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
   are up and after. Run on 2026-11-15 against a local build: Node 25/25;
   `test/browser.mjs` 32/32 combinations in each of Chromium, Firefox and
   WebKit (Playwright 1.62).
+- [`../performance.md`](../performance.md) (2026-11-15): every variant on
+  2 / 4 / 8 threads in three browsers, and the WebKit instance limit.
 - wasm-av1's `docs/features/variants-and-threading.md`: the spawn relay,
   the WebKit bug and the copy guard, in full.
 

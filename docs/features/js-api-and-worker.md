@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — works and is covered by the Node tests and the browser matrix; the flush/reload races and the `load()` hang of wasm-av1 are carried over unchanged.
 > **Owners (code):** `js/index.js`, `js/decoder.js`, `js/worker.js`, `js/worker-client.js`
 > **Related docs:** [decoder-core.md](./decoder-core.md), [frames-and-rendering.md](./frames-and-rendering.md), [variants-and-threading.md](./variants-and-threading.md), [player-and-hls.md](./player-and-hls.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 

@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — frame-by-frame equal to rivet-h26x's own decoder on every fixture, on 1, 2 and 4 threads; but a frame's pts is assigned by assumption (every pts that goes in gets a frame), and a picture that is never output shifts every later pts by one.
 > **Owners (code):** `src/decoder.rs`, `src/core.rs`, `src/units.rs`, `src/wasm.rs`, `src/lib.rs`
 > **Related docs:** [input-sources.md](./input-sources.md), [frames-and-rendering.md](./frames-and-rendering.md), [variants-and-threading.md](./variants-and-threading.md), [`../performance.md`](../performance.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 
@@ -21,7 +21,9 @@ The decoder underneath is **rivet-h26x** (crate `rivet-h26x`, imported as
 Recommendations. It takes NAL units in decode order and hands back cropped,
 packed pictures in output order. The private `core` module (`src/core.rs`)
 is the adapter, and with the thread hook in `src/threads.rs` the only code
-that names it. Speed: see [`../performance.md`](../performance.md).
+that names it. Speed, measured in Chromium, WebKit and Firefox on CI's
+build: see [`../performance.md`](../performance.md); what the decoder is
+and how it is built: [`../rivet-h26x.md`](../rivet-h26x.md).
 
 What the adapter has to supply that rivet-av1 did not need: **access-unit
 boundaries and output timestamps.** rivet-h26x finds picture boundaries
@@ -204,7 +206,9 @@ panic in wasm is a trap, not an exception.
   Nothing detects the shift. The reverse (more frames than pts) gives
   frames a `None` pts (`src/core.rs:217-228`), and the player falls back to
   counting frames. Field pairing and RASL skipping are not covered by any
-  fixture (all are progressive, and every stream starts at an IDR).
+  fixture: all are progressive, every stream starts at an IDR, and the
+  open-GOP H.265 CMAF fixture (`testdata/cmaf-hevc`) is decoded
+  continuously, so its RASL pictures are decoded, not skipped.
 - **The pts of a unit is presentation time; the order it arrives in is not
   checked.** Units pushed with pts that do not follow output order (a
   wrong edit list, a caller passing decode timestamps) come out with the
@@ -254,5 +258,5 @@ panic in wasm is a trap, not an exception.
 |---|---|---|---|
 | Take the pts from rivet-h26x | No assumption about which pictures are output | rivet-h26x carries an opaque per-picture tag from `push_nal` to `Picture`; the core stops sorting | Proposed |
 | Crop per picture in rivet-h26x's H.264 DPB | Drop the SPS-change drain and its stall | Keep the window on the DPB entry, as its H.265 DPB does | Proposed |
-| Interlaced and open-GOP fixtures | The tracker's field pairing and RASL skipping are untested | PAFF/MBAFF H.264 and an x265 open-GOP stream cut at a CRA in `make-fixtures.sh` | Proposed |
+| Interlaced fixtures, and a stream that starts at a CRA | The tracker's field pairing and RASL skipping are untested | PAFF/MBAFF H.264 in `make-fixtures.sh`; decode `testdata/cmaf-hevc/seg1.m4s` alone after its init segment | Proposed |
 | Reset `Stats` on source change | Comparable counters after a seek | Zero in `reset_state`, or expose a `since_reset` copy | Proposed |

@@ -106,8 +106,17 @@ take the intersection:
 Step **up** only after a few clean windows in a row (under 2 % dropped+late,
 no stall, network fine), one rung at a time. Start on a rung the device can
 plainly do: [performance.md](performance.md) has what one laptop decodes in
-each engine; an old phone is several times slower, so a phone starts at
-360p/480p and a laptop at 480p/720p.
+each engine — on one core of an M3 Max, the SIMD build does 1080p at 150
+frames per second in Chromium and WebKit for H.264 and about 115 for H.265,
+and a tenth of that in Playwright's Firefox, where threads are what make
+1080p playable. An old phone is several times slower, so a phone starts at
+480p/720p and a laptop wherever the source is.
+
+Make one decoder (one `HlsH26xVideo` or `H26xPlayer`) and reuse it across
+videos and seeks rather than one per video: each threads-build instance has
+its own shared memory, and in WebKit a page that had made a few dozen of
+them could not make more (docs/performance.md, "WebKit and many
+instances").
 
 ```mermaid
 flowchart LR

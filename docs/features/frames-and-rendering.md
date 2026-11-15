@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/frame.rs`, `src/convert.rs`, `src/core.rs` (`frame_from_picture`), `src/wasm.rs` (frame and RGBA sections), `js/decoder.js` (`Frame`, `krKbFor`), `js/render.js`, `js/worker.js` (`needsRgba`)
 > **Related docs:** [decoder-core.md](./decoder-core.md), [js-api-and-worker.md](./js-api-and-worker.md), [`../performance.md`](../performance.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 
@@ -87,8 +87,9 @@ records the returned path in `stats.drawPath`.
   is converted on the CPU, in wasm, for every frame, and reaches the GPU as
   8-bit RGBA; with a Worker both the planes and the RGBA are copied out of
   wasm memory and posted. The shader path is 8-bit only. For 10-bit HEVC
-  that is a cost per frame the 8-bit path does not have (see
-  [`../performance.md`](../performance.md)).
+  that is a cost per frame the 8-bit path does not have. It has not been
+  measured: [`../performance.md`](../performance.md) times 8-bit clips,
+  decode only, without drawing or RGBA.
 - **Unequal luma and chroma depths are reported as the wider.**
   `bit_depth` is `max(bit_depth, bit_depth_chroma)` (`src/core.rs:312`),
   and the conversion, like the shader, reads every plane at that one depth

@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — wasm-av1's player and HLS layer, unchanged but for the decoder; an H.264 CMAF ladder plays and switches rung in Chromium, Firefox and WebKit, but no H.265 ladder has been played through it.
 > **Owners (code):** `js/player.js`, `js/hls.js`, `demo/index.html`
 > **Related docs:** [js-api-and-worker.md](./js-api-and-worker.md), [input-sources.md](./input-sources.md), [frames-and-rendering.md](./frames-and-rendering.md), [`../integration.md`](../integration.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 
@@ -83,7 +83,9 @@ superseded.
 
 - **No H.265 ladder has been played.** The HLS combinations of
   `test/browser.mjs` use the H.264 CMAF fixture (`testdata/cmaf`,
-  `testdata/cmaf-lo`); there is no H.265 CMAF fixture. What an H.265
+  `testdata/cmaf-lo`). `testdata/cmaf-hevc` (one H.265 rendition, open
+  GOP) is decoded segment by segment in the Rust and Node tests, not
+  played through `HlsH26xVideo`. What an H.265
   ladder does at a switch, a seek or a hard switch is described from the
   code in [input-sources.md](./input-sources.md): on an open-GOP ladder
   the first segment after each of them loses its leading (RASL) pictures,
@@ -127,7 +129,7 @@ superseded.
 
 | Idea | Motivation | Sketch | Status |
 |---|---|---|---|
-| H.265 CMAF ladder in the browser matrix | The H.265 HLS path is untested | Two x265 rungs, open GOP, in `make-fixtures.sh`; combos like the H.264 ones | Proposed |
+| H.265 CMAF ladder in the browser matrix | The H.265 HLS path is untested | A second rung next to `testdata/cmaf-hevc` and a master playlist; combos like the H.264 ones | Proposed |
 | Keep to the playing codec | Mixed ladders switch safely | `variantForBandwidth` filters by `this.variant.codec` unless told otherwise | Proposed |
 | Count decoded units per source | Boundary switches as early as possible after a seek | Compare with samples decoded since the last reset, not lifetime `accessUnitsIn` | Proposed |
 | Retry back-off | Fewer requests to a failing origin | Exponential delay on repeated segment errors | Proposed |

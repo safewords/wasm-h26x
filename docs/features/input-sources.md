@@ -1,9 +1,9 @@
 # Input sources
 
-> **Status:** PARTIAL — elementary streams, the four containers, CMAF segments and H.264 rendition switches are tested; an H.265 switch onto an open-GOP segment loses that segment's leading pictures, and a switch to the other codec is not handled.
+> **Status:** PARTIAL — elementary streams, the four containers, CMAF segments of both codecs (H.265 with an open GOP across the boundary) and H.264 rendition switches are tested; an H.265 switch onto an open-GOP segment loses that segment's leading pictures, and a switch to the other codec is not handled.
 > **Owners (code):** `src/decoder.rs`, `src/annexb.rs`, `src/units.rs`, `src/wasm.rs` (input section), `js/decoder.js` (`sniff`, `switchStream`)
 > **Related docs:** [decoder-core.md](./decoder-core.md), [player-and-hls.md](./player-and-hls.md), [`../rivet.md`](../rivet.md), [`../integration.md`](../integration.md)
-> **Last verified against code:** 2026-11-15 @ `616be49`
+> **Last verified against code:** 2026-11-15 @ `bb70073`
 
 ## Overview
 
@@ -62,14 +62,14 @@ NAL unit opens one (`NalEvent::starts_unit`; H.264 7.4.1.2.3, H.265
 in decode order (`src/annexb.rs:99-111`); since each frame takes the
 smallest pts not given out ([decoder-core.md](./decoder-core.md)), frames
 come out numbered 0, 1, 2… in presentation order. The time base is the
-frame duration in the SPS's VUI timing information (`src/annexb.rs:142-146`;
+frame duration in the SPS's VUI timing information (`src/annexb.rs:142-147`;
 for H.264 twice `num_units_in_tick` over `time_scale`, since its ticks are
 fields, `src/units.rs:282-286`); without one it is unknown and the player
 uses its fallback rate. Cutting up front gives the frame count
 (`frameCountHint`) and a free rewind: `flush` goes back to the first unit
-(`src/annexb.rs:163-165`). A stream that is cut short decodes as far as it
+(`src/annexb.rs:164-166`). A stream that is cut short decodes as far as it
 goes: its last unit is simply shorter, may fail once in `run()`, and the
-reader moves on (`src/annexb.rs:149-156`).
+reader moves on (`src/annexb.rs:150-157`).
 
 **Container.** rivet's streaming demuxer is boxed in the source; each
 `run()` asks it for `next_video_sample()` (`src/decoder.rs:670-684`).
@@ -131,8 +131,12 @@ sequenceDiagram
   player holds the previous frame for that long. x265 encodes open GOPs by
   default. The same happens after a seek or a hard switch, where a flush
   restarts the stream at a CRA. A closed-GOP ladder (IDR at every segment)
-  loses nothing. No H.265 CMAF fixture exists; this path is reasoned from
-  the code and H.265 8.1.3, not tested.
+  loses nothing. This path is reasoned from the code and H.265 8.1.3, not
+  tested: `testdata/cmaf-hevc` has an open GOP across its segment
+  boundary, but its tests push both segments under one init segment,
+  where no end of sequence goes in and the RASL pictures are decoded
+  (`tests/container.rs`, `cmaf_segments_decode_continuously`). There is
+  no second H.265 rendition to switch to.
 - **A switch to the other codec is not handled.** `push_segment` of a
   segment of the other codec calls `set_codec` (`src/decoder.rs:402-406`),
   which resets the core: frames decoded and not yet in the ring are lost,
@@ -156,8 +160,9 @@ sequenceDiagram
   (size field `00 00 00 01`) is sent to `setSourceAnnexB` and rejected. Pass
   it to `setSourceContainer` directly.
 - The time base of an elementary stream comes from the last SPS in it that
-  has VUI timing, not the first as `src/annexb.rs:142-143` says; the
-  tracker overwrites it on each such SPS (`src/units.rs:280-286`, `398-402`).
+  has VUI timing (`src/annexb.rs:142-147`); the tracker overwrites it on
+  each such SPS (`src/units.rs:280-286`, `398-402`). A stream normally
+  repeats one SPS, so this matters only for one that changes its rate.
 
 ## History & references
 
@@ -169,7 +174,12 @@ sequenceDiagram
   the parameter sets in band itself.
 - `tests/container.rs`: MP4, fMP4, Matroska and TS of the H.264 fixture,
   and MP4, Matroska and TS of the H.265 one, equal the elementary stream
-  frame by frame on 1 and 4 threads; CMAF segments one by one; an H.264
+  frame by frame on 1 and 4 threads; CMAF segments one by one, H.264 and
+  H.265, equal to the elementary stream (`30688b9` added the H.265 one,
+  `testdata/cmaf-hevc`, x265 with an open GOP: the second segment begins
+  with a CRA whose RASL pictures refer to the first, and they are decoded;
+  ffmpeg's HLS muxer writes one composition time twice at that boundary,
+  so the test checks those pts only for order); an H.264
   rendition switch at a segment boundary is seamless and exact on both
   sides of it.
 
@@ -177,7 +187,7 @@ sequenceDiagram
 
 | Idea | Motivation | Sketch | Status |
 |---|---|---|---|
-| H.265 CMAF fixture, open and closed GOP | The end-of-sequence path and the RASL loss are untested | Two x265 rungs in `make-fixtures.sh`, a switch test like the H.264 one | Proposed |
+| A second H.265 rendition | The end-of-sequence path and the RASL loss at a switch are untested | A lower x265 rung next to `testdata/cmaf-hevc` in `make-fixtures.sh`, a switch test like the H.264 one | Proposed |
 | Keep the RASL pictures of a switch | No hold at an open-GOP switch | Switch only at segments that start with an IDR, or overlap one segment of both rungs and splice after the CRA | Proposed |
 | One codec per decoder in push mode | Mixed ladders | Refuse a segment of the other codec, or flush and drop the old queue explicitly; `variantForBandwidth` filters by the playing codec | Proposed |
 | Byte-range segments | HLS `EXT-X-BYTERANGE` ladders | Range fetches in `hls.js`; the decoder side needs nothing | Proposed |

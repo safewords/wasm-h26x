@@ -56,6 +56,8 @@ for H.264 and H.265, with rivet-h26x in place of rivet-av1.
 - rivet-h26x's H.264 DPB crops waiting pictures with the newest SPS's
   window; the decoder here outputs them before a changed SPS goes in
   (docs/rivet-h26x.md).
+- In one WebKit page, a few dozen threads-build instances (each with its
+  own shared memory) exhaust it; reuse one decoder (docs/performance.md).
 - Pictures that are decoded but not output (`pic_output_flag` 0, a refused
   picture) would leave their pts behind and shift later frames' pts by one
   (docs/features/decoder-core.md).
