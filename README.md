@@ -19,7 +19,19 @@ extensions of H.265). This gives those pages a WebAssembly software decoder
 that the browser JIT compiles to NEON/SSE where the SIMD build is used, and
 that spreads over the cores where the page allows threads.
 
-**How fast it is, plainly.** Being measured; see [Performance](#performance).
+**How fast it is, plainly.** Measured on 2026-11-15 on an Apple M3 Max
+laptop in Playwright's Chromium, on CI's build: on one thread the SIMD
+build decodes 1080p H.264 at 152 frames per second and 1080p H.265 at 117
+(720p at 231 and 186) — real time with room to spare on a laptop core, and
+about half the rate of FFmpeg's native decoders with their hand-written
+assembly on the same core. The baseline build is about a third of that
+(50 and 34 fps at 1080p). With threads, 1080p reaches 843 fps (H.264) and
+655 (H.265) on eight. WebKit is close to Chromium on one thread and gains
+less from threads; Firefox (Playwright's build) runs it about ten times
+slower, where threads are what make 1080p playable. The output is
+bit-exact: every frame equals rivet-h26x's native decoder's.
+[Performance](#performance) and [docs/performance.md](docs/performance.md)
+have the tables.
 
 **Nothing upstream is vendored.** rivet-h26x and rivet-container are git
 dependencies, two packages of rivet `main` (`Cargo.lock` pins the
@@ -39,15 +51,21 @@ defects.
 ## What you get
 
 ```
-pkg/baseline/wasm_h26x_bg.wasm      post-MVP wasm
-pkg/simd/wasm_h26x_bg.wasm          + simd128 kernels
-pkg/threads/wasm_h26x_bg.wasm       baseline + atomics/shared memory
-pkg/simd-threads/wasm_h26x_bg.wasm  simd + atomics/shared memory
+pkg/baseline/wasm_h26x_bg.wasm      post-MVP wasm                     2.40 MB (766 KB gzip)
+pkg/simd/wasm_h26x_bg.wasm          + simd128 kernels                 2.69 MB (858 KB gzip)
+pkg/threads/wasm_h26x_bg.wasm       baseline + atomics/shared memory  2.41 MB (775 KB gzip)
+pkg/simd-threads/wasm_h26x_bg.wasm  simd + atomics/shared memory      2.71 MB (872 KB gzip)
 pkg/thread-worker.js               the Worker each decoder thread runs in
 js/                                ESM wrapper: loader + feature detection, Decoder, WebGL/2D renderers, Worker, H26xPlayer, HlsH26xVideo
 ```
 
-The sizes are in `pkg/manifest.json` once CI's build is committed.
+Those sizes are CI's build of `2e79fa0` with `wasm-opt -O3` (2026-11-15),
+which is what `pkg/` holds (`pkg/manifest.json` has the bytes and the
+rivet-h26x and rivet revisions; gzip is `gzip -9`). As in wasm-av1, most of
+each file is the container demuxers: built without the `container` feature
+(and, locally, without `wasm-opt`) the baseline module is 1.51 MB (422 KB
+gzip) against 2.56 MB with it, the SIMD one 1.76 MB (505 KB gzip) against
+2.82 MB. rivet-h26x's encoder is not linked: nothing here calls it.
 
 | build | needs | Chrome | Firefox | Safari |
 |---|---|---|---|---|
@@ -183,9 +201,9 @@ test below holds its frames to those, one by one.
 
 | Command | Proves |
 |---|---|
-| `cargo test --release` (and `--no-default-features`) | Native: access-unit cutting, Exp-Golomb, sniffing, geometry, colour conversion against a float reference (8 to 16 bits); every fixture — H.264 CAVLC, CABAC with B-pyramids, High 10, 4:2:2 10-bit, 4:4:4, 4:0:0; H.265 Main (WPP), Main 10 at 178×100, 4:4:4 — decodes to h26xdec's frames on 1, 2 and 4 threads, with pts in presentation order; push mode ≡ elementary stream; flush rewinds; MP4/fMP4/MKV/TS via rivet ≡ the elementary stream on 1 and 4 threads; CMAF segments; a rung switch at a segment boundary. |
+| `cargo test --release` (and `--no-default-features`) | Native: access-unit cutting, Exp-Golomb, sniffing, geometry, colour conversion against a float reference (8 to 16 bits); every fixture — H.264 CAVLC, CABAC with B-pyramids, High 10, 4:2:2 10-bit, 4:4:4, 4:0:0; H.265 Main (WPP), Main 10 at 178×100, 4:4:4 — decodes to h26xdec's frames on 1, 2 and 4 threads, with pts in presentation order; push mode ≡ elementary stream; flush rewinds; MP4/fMP4/MKV/TS via rivet ≡ the elementary stream on 1 and 4 threads; CMAF segments (H.264, and H.265 with open GOPs, whose RASL pictures at the boundary must be decoded); a rung switch at a segment boundary. |
 | `cargo test --release --target wasm32-unknown-unknown --test wasm_convert` (± `RUSTFLAGS=-C target-feature=+simd128`) | Inside wasm, in Node: the RGBA dispatch equals the scalar path — the SIMD build's v128 code included. |
-| `node --test test/decode.test.mjs` (after `scripts/build.sh`) | The built `.wasm`, all four variants, the same frames through the wasm-bindgen surface (so rivet-h26x's simd128 kernels are bit-exact too); the two threads builds on 1, 2, 4 and 8 threads, each wasm thread a `worker_threads` Worker on the shared memory, with the Workers kept and reused; SIMD and baseline RGBA **byte-identical**; push mode; containers; CMAF segments; a seamless rung switch through the JS `Decoder`; ms/frame. |
+| `node --test test/decode.test.mjs` (after `scripts/build.sh`) | The built `.wasm`, all four variants, the same frames through the wasm-bindgen surface (so rivet-h26x's simd128 kernels are bit-exact too); the two threads builds on 1, 2, 4 and 8 threads, each wasm thread a `worker_threads` Worker on the shared memory, with the Workers kept and reused; SIMD and baseline RGBA **byte-identical**; push mode; containers; CMAF segments of both codecs; a seamless rung switch through the JS `Decoder`; ms/frame. |
 | `node --test test/copy-guard.test.mjs` | `tools/wasm-copy-guard`, the post-link pass the threads builds get for WebKit. |
 | `node test/browser.mjs` (needs Playwright — `PLAYWRIGHT_DIR` or a local install) | Headless Chromium + Firefox + WebKit: 31 combinations of variant (all four, and `auto`) × WebGL/2D × main thread/Worker × H.264/H.265 × 8-bit/10-bit/4:4:4/4:0:0 × elementary stream/MP4/fMP4/MKV/TS/HLS-CMAF (with rung switches), each played to the end with every frame shown, correctly paced, pixels on the canvas and the thread count that ran; and a live stream on four threads, pushed access unit by access unit. On 2026-11-15: 32 of 32 in each engine. |
 | `node scripts/bench-browser.mjs` | Decode speed per variant and thread count in the real engines, the same frame hash in every configuration. |
@@ -196,7 +214,37 @@ and libx265 (run as programs) and h26xdec.
 
 ## Performance
 
-Being measured ([docs/performance.md](docs/performance.md)).
+Measured on 2026-11-15 on one laptop (Apple M3 Max, 12 performance + 4
+efficiency cores), CI's build (`wasm-opt -O3`), `scripts/bench-browser.mjs`:
+each configuration decodes the clip in a Worker twice in one instance and
+the second pass is timed (decode only, wall clock); Chromium and WebKit 300
+frames, median of three; Firefox 100 frames, one run. The clips are Big
+Buck Bunny from test-videos.co.uk (`scripts/fetch-samples.sh`), H.264 High
+and H.265 Main, about 4 Mb/s, as elementary streams. Every configuration
+produced the same frames. Frames per second, one thread / the threads
+builds with SIMD on 2, 4 and 8 threads:
+
+| clip | Chromium: baseline | simd | simd-threads 2 / 4 / 8 | WebKit: simd | simd-threads 2 / 4 / 8 | Firefox: simd | simd-threads 2 / 4 / 8 |
+|---|---|---|---|---|---|---|---|
+| H.264 1280×720 | 83 | 231 | 339 / 452 / 808 | 221 | 326 / 374 / 533 | 21.5 | 29 / 54 / 65 |
+| H.264 1920×1080 | 50 | 152 | 289 / 481 / 843 | 150 | 255 / 346 / 469 | 15.3 | 27 / 49 / 80 |
+| H.265 1280×720 | 68 | 186 | 749 / 912 / 947 | 189 | 558 / 387 / 561 | 18.1 | 59 / 81 / 58 |
+| H.265 1920×1080 | 34 | 117 | 503 / 584 / 655 | 115 | 372 / 400 / 325 | 9.8 | 43 / 62 / 61 |
+
+For context, FFmpeg 8.1.2's native decoders on the same machine and
+streams (run as a program, `-threads 1`): 404 / 347 fps for the H.264
+clips and 331 / 209 for the H.265 ones, so the SIMD build in Chromium is
+at 0.44 to 0.57 of native on one thread.
+
+`threads` is rivet-h26x's own setting, and the codecs use it differently:
+an H.264 decoder of `n` threads decodes `n` pictures at once; an H.265 one
+runs `2n` workers for rows, tiles, slice segments and pictures in flight
+and `max(n/4, 1)` for the loop filters, which is why H.265 climbs so fast
+from one thread to two (five workers) and levels off after. WebKit's
+threads numbers for H.265 are noisy and lower at 4 and 8 than at 2.
+[docs/performance.md](docs/performance.md) has every variant (the baseline
+and threads builds too), the native comparison at eight threads, and what
+WebKit does with many instances in one page.
 
 ## Layout
 
