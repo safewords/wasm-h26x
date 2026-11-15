@@ -1,0 +1,78 @@
+[package]
+name = "wasm-h26x"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+license = "Apache-2.0"
+description = "H.264 and H.265 decoding for the browser: rivet-h26x compiled to WebAssembly, in baseline, SIMD and threads builds, behind wasm-av1's streaming API."
+repository = "https://github.com/safewords/wasm-h26x"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The decoder core: rivet-h26x (imported as `h26x`), rivet's own H.264 and
+# H.265 decoders, written from the ITU-T Recommendations — no C, no libc,
+# one dependency (thiserror). Open Encoding Attribution License 1.0
+# (source-available; see NOTICE). It is `crates/h26x` of rivet, a submodule
+# there whose own repository is https://github.com/safewords/rivet-h26x-codecs;
+# taken from rivet `main` like rivet-container, so one git source carries
+# both, and Cargo.lock pins the revision. Nothing of it is vendored here.
+# docs/rivet-h26x.md has what it does, what this crate needs of it, and how
+# fast it is.
+h26x = { git = "https://github.com/rivet-transcoder/rivet", branch = "main", package = "rivet-h26x" }
+# The demuxers: MP4/fMP4/CMAF, Matroska/WebM, TS. rivet is the org's own
+# transcoder; its `rivet-container` crate hands us H.264/H.265 access units
+# (Annex-B, parameter sets in band) + pts straight out of a container. It
+# builds for wasm32 without rivet-codec (see docs/rivet.md); Cargo.lock pins
+# the revision. Optional: without the `container` feature only elementary
+# streams and pushed access units are accepted, and the .wasm is smaller.
+container = { git = "https://github.com/rivet-transcoder/rivet", branch = "main", package = "rivet-container", default-features = false, optional = true }
+bytes = { version = "1", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+md-5 = "0.10"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+# Cargo's own lints (Cargo 1.100). `unused_dependencies` is warn-by-default,
+# and a warning from cargo is not a rustc warning: `cargo clippy -- -D warnings`
+# exits 0 with an unused dependency in the manifest. `deny` makes any cargo
+# command that compiles the crate fail on one.
+[lints.cargo]
+unused_dependencies = "deny"
+
+[features]
+default = ["container"]
+# MP4/fMP4/MKV/TS input via rivet-container (`setSourceContainer`).
+container = ["dep:container", "dep:bytes"]
+
+# The threads builds need rivet-h26x to start its workers through an
+# embedder (`h26x::platform`, so that they can be Web Workers), which is on
+# rivet-h26x's `wasm/threads` branch and not yet in rivet `main`. Until it
+# is, both this crate and rivet-container take rivet-h26x from that branch,
+# at the revision Cargo.lock pins — one copy of it in the build. When the
+# branch is merged and rivet `main` carries it, delete this section and run
+# `cargo update -p rivet-h26x`.
+[patch."https://github.com/rivet-transcoder/rivet"]
+rivet-h26x = { git = "https://github.com/safewords/rivet-h26x-codecs", rev = "a26393e4ff2d6823b65fa3568849ba6a114e1075" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = "debuginfo"
+
+# The native harness/tests decode real streams; an unoptimised decoder is painfully slow.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test]
+opt-level = 2

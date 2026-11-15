@@ -1,0 +1,57 @@
+wasm-h26x
+Copyright 2026 safewords
+
+This product is wasm-av1 (https://github.com/safewords/wasm-av1), Copyright
+2026 safewords, licensed under the Apache License, Version 2.0, with
+rivet-h26x in place of rivet-av1: its JavaScript API, decoder driving loop,
+frame ring, frame layout, YUV→RGB conversion, renderers, player, HLS glue,
+thread pool plumbing (and tools/wasm-copy-guard), build and release
+machinery and tests are wasm-av1's, adapted. wasm-av1 is in turn a Rust
+port of "wasm-av1" (https://github.com/GoogleChromeLabs/wasm-av1),
+Copyright 2018 Google LLC, licensed under the Apache License, Version 2.0:
+the decoder driving loop, data source, frame ring buffer, YUV→RGB
+conversion, WebGL renderer and demo page derive from that project's
+decode-av1.c, blob-api.c, yuv-to-rgb.c, draw-image.js and index.html.
+
+The H.264 / H.265 decoder and the container demuxers are not part of this
+repository's source. They are git dependencies, compiled into every .wasm
+this project builds (pkg/, the npm package, the release artefacts):
+
+  rivet-h26x       https://github.com/safewords/rivet-h26x-codecs
+                   Copyright 2026 Ely Erin Fox
+                   Open Encoding Attribution License, Version 1.0
+                   The decoder core, in every build. Taken as crates/h26x of
+                   https://github.com/rivet-transcoder/rivet, branch main
+                   (for now patched to a revision of rivet-h26x's own
+                   repository — see Cargo.toml and docs/rivet-h26x.md). Its
+                   NOTICE reads, in part: "The decoders are original
+                   implementations written from the ITU-T Recommendations
+                   H.264 (ISO/IEC 14496-10) and H.265 (ISO/IEC 23008-2).
+                   They are not translations of any other decoder's
+                   source." Its one dependency, thiserror
+                   (https://crates.io/crates/thiserror), is MIT OR
+                   Apache-2.0.
+  rivet-container  https://github.com/rivet-transcoder/rivet
+                   Copyright 2026 Ely Erin Fox
+                   Open Encoding Attribution License, Version 1.0
+                   The demuxers, in builds with the `container` feature (the
+                   default, and what pkg/ holds) — see docs/rivet.md.
+
+The Open Encoding Attribution License 1.0 is source-available, not open
+source, and it is not the Apache License this repository's own code is
+under. Its text is LICENSE-OEAL.md here (shipped in the npm package), a
+copy of LICENSE.md in each of those repositories. In short, and
+the licence's numbered terms control: §4 requires anyone who distributes the
+software, in source or built form — a .wasm from this project included — to
+give recipients a copy of that licence and to carry these notices forward;
+§5 requires commercial use that reaches third parties (a product shipped, a
+for-profit service run) to display the short attribution credit its
+Exhibit A specifies, in one of the places §5 lists. Personal, nonprofit,
+academic and government use owe no credit.
+
+Patents. H.264/AVC and H.265/HEVC are covered by patents, licensed by
+pools (Via LA, Access Advance, Velos) for products and services that
+encode or decode them. Neither the Apache License nor the Open Encoding
+Attribution License grants any right under those patents. Anyone shipping
+a product or running a service built on this package is responsible for
+their own patent position, as with any other H.264 or H.265 decoder.

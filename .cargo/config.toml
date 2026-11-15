@@ -1,0 +1,13 @@
+# `cargo test --target wasm32-unknown-unknown` runs the wasm-bindgen tests in Node
+# (the runner is installed alongside wasm-bindgen-cli).
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"
+
+[registry]
+# Dependency cooldown (Cargo 1.100): `cargo update` and `cargo add`
+# ignore crates.io versions published in the last 7 days, unless
+# Cargo.lock already has them. A release that turns out to be malicious
+# is usually pulled within days. Builds from Cargo.lock are unaffected.
+# To take a fresh security fix sooner, lift the check for that one command:
+# `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow cargo update -p <crate> --precise <version>`.
+global-min-publish-age = "7 days"

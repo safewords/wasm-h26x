@@ -1,0 +1,588 @@
+//! The wasm-bindgen surface — upstream's `EXPORTED_FUNCTIONS` list, as one object.
+//!
+//! Upstream exported flat C functions (`_AVX_Decoder_new`, `_AVX_Decoder_run`,
+//! `_AVX_Decoder_get_frame`, `_AVX_Video_Frame_get_buffer`, `_AVX_YUV_to_RGB`,
+//! `_DS_open`/`_DS_set_blob`, `_malloc`/`_free`) and the page did pointer
+//! arithmetic on `Module.HEAPU8`. Here the same operations hang off one
+//! [`H26xDecoder`] instance and JS never allocates: it copies input in
+//! (`setSourceAnnexB` / `setSourceContainer` / `pushAccessUnit`) and reads
+//! output out as views over wasm memory (`framePtr`/`frameLen`,
+//! `rgbaPtr`/`rgbaLen`). The surface is wasm-av1's, with an elementary
+//! stream for IVF and access units for temporal units.
+//!
+//! **Views are transient.** Any call that decodes may grow wasm memory, which
+//! detaches every `Uint8Array` a caller built over it. Build the view, use it,
+//! drop it — the JS wrapper in `js/` does this for you.
+//!
+//! The "current frame" accessors refer to the frame most recently made current
+//! by [`H26xDecoder::next_frame`]; it stays valid until the next `nextFrame`,
+//! `flush`, or source change.
+
+use wasm_bindgen::prelude::*;
+
+use crate::convert;
+use crate::decoder::{Config, Decoder, RunOutcome};
+use crate::frame::Frame;
+use crate::units::Codec;
+
+/// True when this .wasm was built with SIMD128.
+#[wasm_bindgen(js_name = "simdEnabled")]
+pub fn simd_enabled() -> bool {
+    convert::simd_enabled()
+}
+
+/// Worker threads (Web Workers) the decoder threads have asked for so far in
+/// this instance; 0 in a build without threads.
+#[wasm_bindgen(js_name = "threadWorkersSpawned")]
+pub fn thread_workers_spawned() -> u32 {
+    #[cfg(target_feature = "atomics")]
+    {
+        crate::threads::workers_spawned() as u32
+    }
+    #[cfg(not(target_feature = "atomics"))]
+    {
+        0
+    }
+}
+
+/// True when this .wasm was built with atomics + shared memory and can run
+/// the decoder's worker threads as Web Workers (`threads` > 1 in the constructor).
+/// Needs a cross-origin-isolated page and the decoder in a Worker.
+#[wasm_bindgen(js_name = "threadsSupported")]
+pub fn threads_supported() -> bool {
+    crate::THREADS_SUPPORTED
+}
+
+/// Crate version.
+#[wasm_bindgen]
+pub fn version() -> String {
+    crate::VERSION.to_string()
+}
+
+/// True when this .wasm can demux containers (`setSourceContainer`), i.e.
+/// was built with the `container` feature (rivet-container).
+#[wasm_bindgen(js_name = "containerSupport")]
+pub fn container_support() -> bool {
+    cfg!(feature = "container")
+}
+
+/// [`RunOutcome`] as a small integer for JS.
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum RunResult {
+    Full = 0,
+    Consumed = 1,
+    Starved = 2,
+    EndOfStream = 3,
+}
+
+impl From<RunOutcome> for RunResult {
+    fn from(o: RunOutcome) -> Self {
+        match o {
+            RunOutcome::Full => RunResult::Full,
+            RunOutcome::Consumed => RunResult::Consumed,
+            RunOutcome::Starved => RunResult::Starved,
+            RunOutcome::EndOfStream => RunResult::EndOfStream,
+        }
+    }
+}
+
+/// Decoder counters.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Default)]
+pub struct DecoderStats {
+    #[wasm_bindgen(js_name = "accessUnitsIn")]
+    pub access_units_in: f64,
+    #[wasm_bindgen(js_name = "bytesIn")]
+    pub bytes_in: f64,
+    #[wasm_bindgen(js_name = "framesOut")]
+    pub frames_out: f64,
+    #[wasm_bindgen(js_name = "decodeErrors")]
+    pub decode_errors: f64,
+}
+
+/// One H.264 / H.265 decoder with its frame ring and a reusable RGBA
+/// scratch buffer.
+#[wasm_bindgen]
+pub struct H26xDecoder {
+    inner: Decoder,
+    rgba: Vec<u8>,
+}
+
+fn js_err(e: impl std::fmt::Display) -> JsError {
+    JsError::new(&e.to_string())
+}
+
+fn codec_arg(codec: Option<String>) -> Result<Option<Codec>, JsError> {
+    match codec.as_deref() {
+        None | Some("") | Some("auto") => Ok(None),
+        Some(label) => Codec::from_label(label)
+            .map(Some)
+            .ok_or_else(|| JsError::new(&format!("unknown codec {label:?} (h264 or hevc)"))),
+    }
+}
+
+#[cfg(not(feature = "container"))]
+fn no_container() -> JsError {
+    JsError::new("this build has no container support (feature `container`)")
+}
+
+#[wasm_bindgen]
+impl H26xDecoder {
+    /// `maxBuffered` frames kept ahead (default 10, upstream's
+    /// `NUM_FRAMES_BUFFERED`); `threads` decoder threads (default 1; more
+    /// only on a build where `threadsSupported()` is true, else forced to 1 —
+    /// see `threads()` for what was applied); `codec` (`"h264"`, `"hevc"`)
+    /// for pushed access units, which otherwise say themselves.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        max_buffered: Option<u32>,
+        threads: Option<u32>,
+        codec: Option<String>,
+    ) -> Result<H26xDecoder, JsError> {
+        let config = Config {
+            max_buffered: max_buffered
+                .map(|n| n.max(1) as usize)
+                .unwrap_or(Config::default().max_buffered),
+            threads: threads.unwrap_or(1).max(1),
+        };
+        let mut inner = Decoder::new(config).map_err(js_err)?;
+        if let Some(c) = codec_arg(codec)? {
+            inner.set_codec(c.name()).map_err(js_err)?;
+        }
+        Ok(H26xDecoder {
+            inner,
+            rgba: Vec::new(),
+        })
+    }
+
+    /// Worker threads this decoder runs with (1 unless the build supports
+    /// threads and more were asked for).
+    #[wasm_bindgen]
+    pub fn threads(&self) -> u32 {
+        crate::decoder::effective_threads(self.inner.config())
+    }
+
+    /// `"h264"`, `"hevc"`, or `""` while unknown.
+    #[wasm_bindgen]
+    pub fn codec(&self) -> String {
+        self.inner.codec().map_or("", Codec::name).to_string()
+    }
+
+    /// Say which codec pushed access units are (`"h264"`/`"avc"`,
+    /// `"hevc"`/`"h265"`). A change resets the decoder.
+    #[wasm_bindgen(js_name = "setCodec")]
+    pub fn set_codec(&mut self, codec: &str) -> Result<(), JsError> {
+        self.inner.set_codec(codec).map_err(js_err)
+    }
+
+    // ---- input -----------------------------------------------------------
+
+    /// Load a whole Annex-B elementary stream (`.264`, `.265`; copied into
+    /// wasm memory). `codec` is `"h264"` or `"hevc"`, or absent/`"auto"` to
+    /// tell from the NAL units. Resets the decoder.
+    #[wasm_bindgen(js_name = "setSourceAnnexB")]
+    pub fn set_source_annexb(&mut self, data: &[u8], codec: Option<String>) -> Result<(), JsError> {
+        let codec = codec_arg(codec)?;
+        self.inner
+            .set_source_annexb(data.to_vec(), codec)
+            .map(|_| ())
+            .map_err(js_err)
+    }
+
+    /// Load a whole container file — MP4 / fragmented MP4 / CMAF, Matroska,
+    /// MPEG-TS — demuxed by rivet (copied into wasm memory). Resets the
+    /// decoder. Throws if the build lacks the `container` feature, rivet
+    /// cannot read the file, or the video track is neither H.264 nor H.265.
+    #[wasm_bindgen(js_name = "setSourceContainer")]
+    pub fn set_source_container(&mut self, data: &[u8]) -> Result<(), JsError> {
+        #[cfg(feature = "container")]
+        {
+            self.inner
+                .set_source_container(data.to_vec())
+                .map(|_| ())
+                .map_err(js_err)
+        }
+        #[cfg(not(feature = "container"))]
+        {
+            let _ = data;
+            Err(no_container())
+        }
+    }
+
+    /// Segment-fed playback: keep the CMAF/fMP4 initialisation segment
+    /// (`ftyp`+`moov`) so `pushSegment` can demux media segments against it.
+    /// Switches to push mode. Throws without the `container` feature.
+    #[wasm_bindgen(js_name = "setInitSegment")]
+    pub fn set_init_segment(&mut self, init: &[u8]) -> Result<(), JsError> {
+        #[cfg(feature = "container")]
+        {
+            self.inner.set_init_segment(init.to_vec()).map_err(js_err)
+        }
+        #[cfg(not(feature = "container"))]
+        {
+            let _ = init;
+            Err(no_container())
+        }
+    }
+
+    /// Demux one media segment (`moof`+`mdat`, or a whole file) with rivet
+    /// and queue its samples as access units; returns how many. Frames keep
+    /// flowing across segments — no reset. Time base = the container's.
+    #[wasm_bindgen(js_name = "pushSegment")]
+    pub fn push_segment(&mut self, segment: &[u8]) -> Result<u32, JsError> {
+        #[cfg(feature = "container")]
+        {
+            self.inner
+                .push_segment(segment)
+                .map(|n| n as u32)
+                .map_err(js_err)
+        }
+        #[cfg(not(feature = "container"))]
+        {
+            let _ = segment;
+            Err(no_container())
+        }
+    }
+
+    /// Queue one access unit (the Annex-B NAL units of one picture, start
+    /// codes and in-band parameter sets included) with its pts.
+    #[wasm_bindgen(js_name = "pushAccessUnit")]
+    pub fn push_access_unit(&mut self, data: &[u8], pts: f64) -> Result<(), JsError> {
+        self.inner
+            .push_access_unit(data.to_vec(), pts as i64)
+            .map_err(js_err)
+    }
+
+    /// Push mode: nothing more is coming.
+    #[wasm_bindgen(js_name = "endOfStream")]
+    pub fn end_of_stream(&mut self) {
+        self.inner.end_of_stream();
+    }
+
+    /// Access units queued and not yet decoded (push mode).
+    #[wasm_bindgen(js_name = "pendingInput")]
+    pub fn pending_input(&self) -> u32 {
+        self.inner.pending_input() as u32
+    }
+
+    /// pts of the first sample of the segment most recently pushed, or NaN.
+    #[wasm_bindgen(js_name = "lastSegmentFirstPts")]
+    pub fn last_segment_first_pts(&self) -> f64 {
+        #[cfg(feature = "container")]
+        {
+            self.inner
+                .last_segment_pts()
+                .map_or(f64::NAN, |(f, _)| f as f64)
+        }
+        #[cfg(not(feature = "container"))]
+        {
+            f64::NAN
+        }
+    }
+
+    /// pts of the last sample of the segment most recently pushed, or NaN.
+    #[wasm_bindgen(js_name = "lastSegmentLastPts")]
+    pub fn last_segment_last_pts(&self) -> f64 {
+        #[cfg(feature = "container")]
+        {
+            self.inner
+                .last_segment_pts()
+                .map_or(f64::NAN, |(_, l)| l as f64)
+        }
+        #[cfg(not(feature = "container"))]
+        {
+            f64::NAN
+        }
+    }
+
+    /// pts of the next queued access unit (push mode), or NaN.
+    #[wasm_bindgen(js_name = "nextQueuedPts")]
+    pub fn next_queued_pts(&self) -> f64 {
+        self.inner.next_queued_pts().map_or(f64::NAN, |p| p as f64)
+    }
+
+    /// pts of the last access unit handed to the decoder, or NaN.
+    #[wasm_bindgen(js_name = "lastSentPts")]
+    pub fn last_sent_pts(&self) -> f64 {
+        self.inner.last_sent_pts().map_or(f64::NAN, |p| p as f64)
+    }
+
+    /// Push mode: drop the queued, not-yet-decoded access units with
+    /// `pts >= pts` (a rendition switch replaces the future from a segment
+    /// boundary the decoder has not reached — no flush, no gap). Returns how
+    /// many were dropped. See `Decoder::truncate_queued_from`.
+    #[wasm_bindgen(js_name = "truncateQueuedFrom")]
+    pub fn truncate_queued_from(&mut self, pts: f64) -> u32 {
+        self.inner.truncate_queued_from(pts as i64) as u32
+    }
+
+    /// Drop everything buffered, reset the decoder core; elementary streams
+    /// rewind.
+    pub fn flush(&mut self) -> Result<(), JsError> {
+        self.inner.flush().map_err(js_err)
+    }
+
+    // ---- driving ---------------------------------------------------------
+
+    /// One bounded step of decoding — see `Decoder::run`. A rejected access
+    /// unit throws; the decoder stays usable, keep calling.
+    pub fn run(&mut self) -> Result<RunResult, JsError> {
+        self.inner.run().map(RunResult::from).map_err(js_err)
+    }
+
+    /// `run()` until the ring is full or input runs out.
+    #[wasm_bindgen(js_name = "runUntilFull")]
+    pub fn run_until_full(&mut self) -> Result<RunResult, JsError> {
+        self.inner
+            .run_until_full()
+            .map(RunResult::from)
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = "framesBuffered")]
+    pub fn frames_buffered(&self) -> u32 {
+        self.inner.frames_buffered() as u32
+    }
+
+    /// Access units taken by the decoder whose frames have not come out yet
+    /// (several pictures are decoded at once on the threads builds; 0 with
+    /// one thread): while this is not 0, `run()` again later collects those
+    /// that are done.
+    #[wasm_bindgen(js_name = "unitsInFlight")]
+    pub fn units_in_flight(&self) -> u32 {
+        self.inner.units_in_flight() as u32
+    }
+
+    /// Nothing left to decode or show.
+    pub fn finished(&self) -> bool {
+        self.inner.finished()
+    }
+
+    pub fn stats(&self) -> DecoderStats {
+        let s = self.inner.stats();
+        DecoderStats {
+            access_units_in: s.access_units_in as f64,
+            bytes_in: s.bytes_in as f64,
+            frames_out: s.frames_out as f64,
+            decode_errors: s.decode_errors as f64,
+        }
+    }
+
+    // ---- stream info -----------------------------------------------------
+
+    /// Stream width: the container header's, else the last decoded frame's; 0 if unknown yet.
+    pub fn width(&self) -> u32 {
+        self.inner.width().unwrap_or(0) as u32
+    }
+
+    pub fn height(&self) -> u32 {
+        self.inner.height().unwrap_or(0) as u32
+    }
+
+    /// Time base numerator: `seconds = pts * num / den` for frame pts. Seconds
+    /// per frame from an elementary stream's VUI, or `1 / container
+    /// timescale`; 0 when unknown (push mode: you know your own units).
+    #[wasm_bindgen(js_name = "timeBaseNum")]
+    pub fn time_base_num(&self) -> u32 {
+        self.inner.time_base().map(|t| t.0).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "timeBaseDen")]
+    pub fn time_base_den(&self) -> u32 {
+        self.inner.time_base().map(|t| t.1).unwrap_or(0)
+    }
+
+    /// Frame count: an elementary stream's (counted), or the container's
+    /// (0 = unknown).
+    #[wasm_bindgen(js_name = "frameCountHint")]
+    pub fn frame_count_hint(&self) -> f64 {
+        if let Some(r) = self.inner.annexb() {
+            return r.frame_count() as f64;
+        }
+        #[cfg(feature = "container")]
+        if let Some(c) = self.inner.container_info() {
+            return c.total_frames as f64;
+        }
+        0.0
+    }
+
+    /// Frame rate as the container (or the stream's VUI) suggests; 0 if
+    /// unknown.
+    #[wasm_bindgen(js_name = "frameRateHint")]
+    pub fn frame_rate_hint(&self) -> f64 {
+        #[cfg(feature = "container")]
+        if let Some(c) = self.inner.container_info() {
+            if c.frame_rate > 0.0 {
+                return c.frame_rate;
+            }
+        }
+        self.inner.vui_frame_rate().unwrap_or(0.0)
+    }
+
+    /// Duration in seconds: the container's, or an elementary stream's
+    /// frame count over its VUI frame rate (0 if unknown).
+    #[wasm_bindgen(js_name = "durationHint")]
+    pub fn duration_hint(&self) -> f64 {
+        #[cfg(feature = "container")]
+        if let Some(c) = self.inner.container_info() {
+            return c.duration_secs;
+        }
+        match (self.inner.annexb(), self.inner.vui_frame_rate()) {
+            (Some(r), Some(fps)) if fps > 0.0 => r.frame_count() as f64 / fps,
+            _ => 0.0,
+        }
+    }
+
+    // ---- frames ----------------------------------------------------------
+
+    /// Make the oldest buffered frame current; false if none is buffered.
+    #[wasm_bindgen(js_name = "nextFrame")]
+    pub fn next_frame(&mut self) -> bool {
+        self.inner.next_frame().is_some()
+    }
+
+    #[wasm_bindgen(js_name = "hasFrame")]
+    pub fn has_frame(&self) -> bool {
+        self.inner.current_frame().is_some()
+    }
+
+    /// pts of the oldest buffered frame (the one `nextFrame` would return),
+    /// without popping it; NaN if none is buffered or it has no pts.
+    #[wasm_bindgen(js_name = "peekPts")]
+    pub fn peek_pts(&self) -> f64 {
+        self.inner
+            .peek_next()
+            .and_then(|f| f.pts)
+            .map(|p| p as f64)
+            .unwrap_or(f64::NAN)
+    }
+
+    fn cur(&self) -> Option<&Frame> {
+        self.inner.current_frame()
+    }
+
+    #[wasm_bindgen(js_name = "frameWidth")]
+    pub fn frame_width(&self) -> u32 {
+        self.cur().map(|f| f.width as u32).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "frameHeight")]
+    pub fn frame_height(&self) -> u32 {
+        self.cur().map(|f| f.height as u32).unwrap_or(0)
+    }
+
+    /// 8 to 16 (the wider of luma and chroma).
+    #[wasm_bindgen(js_name = "frameBitDepth")]
+    pub fn frame_bit_depth(&self) -> u32 {
+        self.cur().map(|f| f.bit_depth as u32).unwrap_or(0)
+    }
+
+    /// 1 or 2.
+    #[wasm_bindgen(js_name = "frameBytesPerSample")]
+    pub fn frame_bytes_per_sample(&self) -> u32 {
+        self.cur().map(|f| f.bytes_per_sample as u32).unwrap_or(0)
+    }
+
+    /// 0 = I400, 1 = I420, 2 = I422, 3 = I444.
+    #[wasm_bindgen(js_name = "frameLayout")]
+    pub fn frame_layout(&self) -> u32 {
+        self.cur().map(|f| f.layout as u32).unwrap_or(1)
+    }
+
+    /// pts of the access unit the picture came in (see `Decoder`); NaN if
+    /// it had none.
+    #[wasm_bindgen(js_name = "framePts")]
+    pub fn frame_pts(&self) -> f64 {
+        self.cur()
+            .and_then(|f| f.pts)
+            .map(|p| p as f64)
+            .unwrap_or(f64::NAN)
+    }
+
+    /// ISO 23091-2 matrix code (1 BT.709, 5/6 BT.601, 9 BT.2020, 2 unspecified).
+    #[wasm_bindgen(js_name = "frameMatrix")]
+    pub fn frame_matrix(&self) -> u32 {
+        self.cur().map(|f| f.color.matrix as u32).unwrap_or(2)
+    }
+
+    #[wasm_bindgen(js_name = "framePrimaries")]
+    pub fn frame_primaries(&self) -> u32 {
+        self.cur().map(|f| f.color.primaries as u32).unwrap_or(2)
+    }
+
+    #[wasm_bindgen(js_name = "frameTransfer")]
+    pub fn frame_transfer(&self) -> u32 {
+        self.cur().map(|f| f.color.transfer as u32).unwrap_or(2)
+    }
+
+    #[wasm_bindgen(js_name = "frameFullRange")]
+    pub fn frame_full_range(&self) -> bool {
+        self.cur().map(|f| f.color.full_range).unwrap_or(false)
+    }
+
+    /// Pointer to the packed planes of the current frame in wasm memory.
+    #[wasm_bindgen(js_name = "framePtr")]
+    pub fn frame_ptr(&self) -> u32 {
+        self.cur().map(|f| f.data.as_ptr() as u32).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "frameLen")]
+    pub fn frame_len(&self) -> u32 {
+        self.cur().map(|f| f.data.len() as u32).unwrap_or(0)
+    }
+
+    /// Byte offset of plane `i` (0 Y, 1 U, 2 V) within the frame buffer.
+    #[wasm_bindgen(js_name = "planeOffset")]
+    pub fn plane_offset(&self, i: u32) -> u32 {
+        self.plane(i).map(|p| p.offset as u32).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "planeStride")]
+    pub fn plane_stride(&self, i: u32) -> u32 {
+        self.plane(i).map(|p| p.stride as u32).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "planeWidth")]
+    pub fn plane_width(&self, i: u32) -> u32 {
+        self.plane(i).map(|p| p.width as u32).unwrap_or(0)
+    }
+
+    #[wasm_bindgen(js_name = "planeHeight")]
+    pub fn plane_height(&self, i: u32) -> u32 {
+        self.plane(i).map(|p| p.height as u32).unwrap_or(0)
+    }
+
+    fn plane(&self, i: u32) -> Option<&crate::frame::PlaneInfo> {
+        self.cur().and_then(|f| f.planes.get(i as usize))
+    }
+
+    // ---- RGBA ------------------------------------------------------------
+
+    /// Convert the current frame to RGBA8 into the internal scratch buffer
+    /// (SIMD128 in the SIMD build) and return its pointer; `rgbaLen` bytes.
+    #[wasm_bindgen(js_name = "convertToRgba")]
+    pub fn convert_to_rgba(&mut self) -> Result<u32, JsError> {
+        let frame = self
+            .inner
+            .current_frame()
+            .ok_or_else(|| JsError::new("no current frame"))?;
+        let need = frame.rgba_len();
+        if self.rgba.len() < need {
+            self.rgba.resize(need, 0);
+        }
+        convert::yuv_to_rgba(frame, &mut self.rgba[..need]);
+        Ok(self.rgba.as_ptr() as u32)
+    }
+
+    #[wasm_bindgen(js_name = "rgbaPtr")]
+    pub fn rgba_ptr(&self) -> u32 {
+        self.rgba.as_ptr() as u32
+    }
+
+    /// Bytes of RGBA the *current frame* needs (`width * height * 4`).
+    #[wasm_bindgen(js_name = "rgbaLen")]
+    pub fn rgba_len(&self) -> u32 {
+        self.cur().map(|f| f.rgba_len() as u32).unwrap_or(0)
+    }
+}
