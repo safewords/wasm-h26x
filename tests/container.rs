@@ -91,27 +91,47 @@ fn segments(dir: &str, dec: &mut Decoder, out: &mut Decoded) -> usize {
 
 #[test]
 fn cmaf_segments_decode_continuously() {
-    let fx = fixture("h264-cabac-b-320x180");
-    for threads in [1, 4] {
-        let mut dec = Decoder::new(Config {
-            max_buffered: 4,
-            threads,
-        })
-        .unwrap();
-        let mut out = Decoded::default();
-        assert_eq!(segments("cmaf", &mut dec, &mut out), 48);
-        assert_eq!(dec.time_base(), Some((1, 12288)));
-        assert!(!dec.finished());
-        dec.end_of_stream();
-        let rest = drain(&mut dec);
-        out.frames.extend(rest.frames);
-        out.pts.extend(rest.pts);
-        assert_eq!(out.frames, fx.frames, "t{threads}");
-        let pts: Vec<i64> = out.pts.iter().map(|p| p.unwrap()).collect();
-        assert!(
-            pts.windows(2).all(|w| w[1] - w[0] == 512),
-            "t{threads}: {pts:?}"
-        );
+    // H.264 with B-pyramids; and H.265 with open GOPs, whose second segment
+    // begins with a CRA picture whose RASL pictures refer to the first
+    // segment: decoded continuously, they are decoded, not skipped.
+    for (dir, stream, codec) in [
+        ("cmaf", "h264-cabac-b-320x180", Codec::H264),
+        ("cmaf-hevc", "hevc-main-320x180", Codec::Hevc),
+    ] {
+        let fx = fixture(stream);
+        for threads in [1, 4] {
+            let mut dec = Decoder::new(Config {
+                max_buffered: 4,
+                threads,
+            })
+            .unwrap();
+            let mut out = Decoded::default();
+            assert_eq!(segments(dir, &mut dec, &mut out), 48);
+            assert_eq!(dec.codec(), Some(codec));
+            assert_eq!(dec.time_base(), Some((1, 12288)));
+            assert!(!dec.finished());
+            dec.end_of_stream();
+            let rest = drain(&mut dec);
+            out.frames.extend(rest.frames);
+            out.pts.extend(rest.pts);
+            assert_eq!(out.frames, fx.frames, "{dir} t{threads}");
+            let pts: Vec<i64> = out.pts.iter().map(|p| p.unwrap()).collect();
+            if codec == Codec::H264 {
+                assert!(
+                    pts.windows(2).all(|w| w[1] - w[0] == 512),
+                    "{dir} t{threads}: {pts:?}"
+                );
+            } else {
+                // ffmpeg's HLS muxer writes one composition time twice at
+                // the open-GOP boundary between the segments (11772 ticks,
+                // as ffprobe shows too) and skips one: the frames are
+                // right, and their pts are the container's, in order.
+                assert!(
+                    pts.windows(2).all(|w| w[1] >= w[0]),
+                    "{dir} t{threads}: {pts:?}"
+                );
+            }
+        }
     }
 }
 

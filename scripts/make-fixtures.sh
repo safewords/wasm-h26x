@@ -114,6 +114,13 @@ ff -i testdata/cmaf-lo/src.mp4 -c:v copy -f hls -hls_segment_type fmp4 -hls_time
   -hls_playlist_type vod -hls_fmp4_init_filename init.mp4 -hls_segment_filename testdata/cmaf-lo/seg%d.m4s testdata/cmaf-lo/index.m3u8
 rm testdata/cmaf-lo/src.mp4
 
+# The H.265 stream as CMAF too: x265 makes open GOPs (CRA pictures whose
+# RASL pictures refer to the segment before), which a continuous decode
+# must decode, not skip.
+rm -rf testdata/cmaf-hevc && mkdir -p testdata/cmaf-hevc
+ff -i testdata/hevc-main-320x180.mp4 -c:v copy -tag:v hvc1 -f hls -hls_segment_type fmp4 -hls_time 1 \
+  -hls_playlist_type vod -hls_fmp4_init_filename init.mp4 -hls_segment_filename testdata/cmaf-hevc/seg%d.m4s testdata/cmaf-hevc/index.m3u8
+
 # A two-rung master playlist over the two, for HlsH26xVideo's rung switching
 # (BANDWIDTH from the segment sizes, roughly).
 cat > testdata/cmaf/master.m3u8 <<'EOF'
@@ -126,5 +133,5 @@ cat > testdata/cmaf/master.m3u8 <<'EOF'
 index.m3u8
 EOF
 
-ls -la testdata testdata/cmaf testdata/cmaf-lo
+ls -la testdata testdata/cmaf testdata/cmaf-lo testdata/cmaf-hevc
 du -sh testdata

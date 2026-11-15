@@ -355,6 +355,27 @@ test('segment-fed: CMAF init + media segments pushed one at a time (rivet demux,
   dec.free();
 });
 
+test('segment-fed H.265 with open GOPs: the RASL pictures at the boundary are decoded, not skipped', async () => {
+  const m = await load('baseline');
+  const dec = new m.mod.H26xDecoder(4);
+  dec.setInitSegment(read('cmaf-hevc/init.mp4'));
+  const out = { frames: [], pts: [] };
+  let samples = 0;
+  for (const seg of ['seg0.m4s', 'seg1.m4s']) {
+    samples += dec.pushSegment(read(`cmaf-hevc/${seg}`));
+    let r;
+    do { r = dec.run(); drain(dec, m.wasm, out); } while (r === m.mod.RunResult.Consumed || r === m.mod.RunResult.Full);
+  }
+  assert.equal(dec.codec(), 'hevc');
+  dec.endOfStream();
+  while (!dec.finished()) { dec.run(); drain(dec, m.wasm, out); }
+  assert.equal(samples, 48);
+  assert.deepEqual(out.frames, fixture('hevc-main-320x180').frames);
+  // In order (ffmpeg's HLS muxer repeats one composition time at the boundary; see tests/container.rs).
+  for (let i = 1; i < out.pts.length; i++) assert.ok(out.pts[i] >= out.pts[i - 1], 'pts in order');
+  dec.free();
+});
+
 test('seamless rung switch through the JS Decoder: truncate at a boundary, new init, other rung', async () => {
   const m = await load('simd');
   const { Decoder } = await import('../js/decoder.js');
