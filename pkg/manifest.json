@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "core": "rivet-h26x",
+  "h26x": "a26393e4ff2d6823b65fa3568849ba6a114e1075",
+  "rivet": "88a494076a3173fc3b6a8f990bf31010d4ca7290",
+  "profile": "release",
+  "features": "default",
+  "threadWorker": "thread-worker.js",
+  "variants": {
+    "baseline": { "wasm": "baseline/wasm_h26x_bg.wasm", "js": "baseline/wasm_h26x.js", "bytes": 2395577 },
+    "simd": { "wasm": "simd/wasm_h26x_bg.wasm", "js": "simd/wasm_h26x.js", "bytes": 2692513 },
+    "threads": { "wasm": "threads/wasm_h26x_bg.wasm", "js": "threads/wasm_h26x.js", "bytes": 2413460 },
+    "simd-threads": { "wasm": "simd-threads/wasm_h26x_bg.wasm", "js": "simd-threads/wasm_h26x.js", "bytes": 2713008 }
+  }
+}
