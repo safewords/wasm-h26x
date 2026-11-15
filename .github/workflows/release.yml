@@ -1,0 +1,151 @@
+# Cut a release: on a `v*` tag (or by hand), build the wasm variants from
+# that tag, run the tests against them, publish the artefacts on the GitHub
+# Release, and publish the package to npm.
+#
+# GitHub Release (public, unauthenticated URLs):
+#   safewords-wasm-h26x-<ver>.tgz    `npm pack` of the package: js/ + pkg/ + docs — installable by URL:
+#                                   "@safewords/wasm-h26x": "https://github.com/safewords/wasm-h26x/releases/download/v<ver>/safewords-wasm-h26x-<ver>.tgz"
+#   wasm-h26x-pkg-<ver>.zip          just pkg/ (the four .wasm variants, glue, thread-worker.js), for non-npm consumers
+#   SHA256SUMS
+#
+# npm (`npm install @safewords/wasm-h26x`), with provenance. Credentials, in
+# order of preference:
+#   1. npm trusted publishing (OIDC, no secret): on npmjs.com, package settings →
+#      Trusted publisher → GitHub Actions, repository safewords/wasm-h26x, workflow
+#      release.yml. Needs the package to exist (first publish by token or by hand).
+#   2. an NPM_TOKEN repository secret (granular access token, read+write on
+#      packages for the @safewords scope, "bypass 2FA" so automation can publish).
+# With neither configured the npm step warns and the release still succeeds;
+# re-run the workflow for the tag once they are (workflow_dispatch below).
+# Publishing is idempotent: a version already on npm is skipped.
+#
+# The tag must match package.json / Cargo.toml (`v0.1.0` ↔ `0.1.0`).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing tag to (re)publish, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write
+  id-token: write   # npm provenance attestations + trusted publishing
+
+env:
+  CARGO_TERM_COLOR: always
+  # Link with mold, as the org's other Rust builds do. Since Rust 1.90
+  # linux-gnu links with the bundled rust-lld; `linker-features=-lld` turns
+  # that off and `-fuse-ld=mold` has cc hand the link to mold.
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C linker-features=-lld -C link-arg=-fuse-ld=mold"
+  WASM_BINDGEN_VERSION: 0.2.130
+  BINARYEN_VERSION: version_123
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: tag ↔ version
+        id: v
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          PKG=$(node -p "require('./package.json').version")
+          CRATE=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ "$VER" = "$PKG" ] && [ "$VER" = "$CRATE" ] || { echo "::error::tag $TAG but package.json=$PKG Cargo.toml=$CRATE"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"; echo "ver=$VER" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@1.100.0
+        with:
+          components: rust-src
+          targets: wasm32-unknown-unknown
+      # mold for the native links (tests, build scripts, wasm-bindgen's
+      # runner); the wasm32 target keeps its own linker.
+      - uses: rui314/setup-mold@v1
+        with:
+          mold-version: 3.0.0
+          make-default: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: wasm-bindgen-cli + binaryen
+        run: |
+          mkdir -p "$HOME/.cargo/bin" "$HOME/binaryen"
+          curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${WASM_BINDGEN_VERSION}/wasm-bindgen-${WASM_BINDGEN_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" --wildcards '*/wasm-bindgen' '*/wasm-bindgen-test-runner'
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz --strip-components=1 -C "$HOME/binaryen"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; echo "$HOME/binaryen/bin" >> "$GITHUB_PATH"
+      - name: build the variants
+        run: bash scripts/build.sh
+      - name: tests against the built wasm
+        run: |
+          cargo test --release
+          node --test test/decode.test.mjs test/copy-guard.test.mjs
+      - name: package
+        id: pack
+        run: |
+          VER=${{ steps.v.outputs.ver }}
+          npm pack --silent
+          ls safewords-wasm-h26x-${VER}.tgz
+          (cd pkg && zip -qr "../wasm-h26x-pkg-${VER}.zip" .)
+          sha256sum safewords-wasm-h26x-${VER}.tgz wasm-h26x-pkg-${VER}.zip > SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "H.264 and H.265 decoding for the browser: rivet-h26x (rivet's own H.264/H.265 decoders) + rivet demux; baseline, SIMD and threads builds (the decoder's worker threads as Web Workers on a cross-origin-isolated page). See README.md."
+            echo
+            echo '```'
+            echo "npm install @safewords/wasm-h26x@${VER}"
+            echo '```'
+            echo
+            echo "or by URL, without a registry:"
+            echo
+            echo '```json'
+            echo "\"@safewords/wasm-h26x\": \"https://github.com/${{ github.repository }}/releases/download/${{ steps.v.outputs.tag }}/safewords-wasm-h26x-${VER}.tgz\""
+            echo '```'
+            echo
+            echo "| file | bytes |"; echo "|---|---|"
+            for f in pkg/baseline/wasm_h26x_bg.wasm pkg/simd/wasm_h26x_bg.wasm pkg/threads/wasm_h26x_bg.wasm pkg/simd-threads/wasm_h26x_bg.wasm; do echo "| $f | $(stat -c %s $f) |"; done
+            echo
+            echo "rivet-h26x: $(sed -n '/^name = "rivet-h26x"$/{n;n;s/source = ".*#\(.*\)"/\1/p}' Cargo.lock)"
+            echo "rivet (rivet-container): $(sed -n '/^name = "rivet-container"$/{n;n;s/source = ".*#\(.*\)"/\1/p}' Cargo.lock)"
+          } > RELEASE_NOTES.md
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=${{ steps.v.outputs.ver }}; TAG=${{ steps.v.outputs.tag }}
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber safewords-wasm-h26x-${VER}.tgz wasm-h26x-pkg-${VER}.zip SHA256SUMS
+          else
+            gh release create "$TAG" --title "wasm-h26x $TAG" --notes-file RELEASE_NOTES.md safewords-wasm-h26x-${VER}.tgz wasm-h26x-pkg-${VER}.zip SHA256SUMS
+          fi
+      - name: publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VER=${{ steps.v.outputs.ver }}; TAG=${{ steps.v.outputs.tag }}
+          NAME=$(node -p "require('./package.json').name")
+          # Trusted publishing (OIDC, tokenless) needs npm >= 11.5.1; Node 22 ships 10.x.
+          npm install -g npm@latest >/dev/null 2>&1 || true
+          echo "npm $(npm --version)"
+          if [ "$(npm view "${NAME}@${VER}" version 2>/dev/null)" = "${VER}" ]; then
+            echo "::notice::${NAME}@${VER} is already on npm; nothing to publish"
+            exit 0
+          fi
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+            echo "publishing ${NAME}@${VER} with NPM_TOKEN"
+            npm publish --provenance --access public
+          else
+            echo "no NPM_TOKEN secret; publishing ${NAME}@${VER} through npm trusted publishing (OIDC)"
+            if ! npm publish --provenance --access public; then
+              echo "::warning::npm publish of ${NAME}@${VER} failed and no NPM_TOKEN is set. Either configure a trusted publisher for ${NAME} on npmjs.com (GitHub Actions: repository ${{ github.repository }}, workflow release.yml) or add an NPM_TOKEN repository secret, then re-run this workflow for ${TAG} (Actions → release → Run workflow). The GitHub Release above is complete."
+              exit 0
+            fi
+          fi
+          echo "published: https://www.npmjs.com/package/${NAME}/v/${VER}"

@@ -1,0 +1,68 @@
+{
+  "name": "@safewords/wasm-h26x",
+  "version": "0.1.0",
+  "description": "H.264 and H.265 decoding for the browser: rivet-h26x compiled to WebAssembly (baseline, SIMD and multi-threaded builds), with wasm-av1's streaming API, HLS/CMAF glue and WebGL rendering.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./js/index.js",
+  "exports": {
+    ".": "./js/index.js",
+    "./worker": "./js/worker.js",
+    "./js/*": "./js/*",
+    "./pkg/*": "./pkg/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "js",
+    "pkg",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "LICENSE-OEAL.md"
+  ],
+  "sideEffects": [
+    "./js/worker.js",
+    "./js/thread-worker.js"
+  ],
+  "keywords": [
+    "h264",
+    "h265",
+    "hevc",
+    "avc",
+    "wasm",
+    "webassembly",
+    "decoder",
+    "video",
+    "rivet",
+    "hls",
+    "cmaf",
+    "simd",
+    "threads",
+    "webgl"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/safewords/wasm-h26x.git"
+  },
+  "homepage": "https://github.com/safewords/wasm-h26x#readme",
+  "bugs": {
+    "url": "https://github.com/safewords/wasm-h26x/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "test": "bash scripts/build.sh && node --test test/decode.test.mjs test/copy-guard.test.mjs",
+    "test:node": "node --test test/decode.test.mjs test/copy-guard.test.mjs",
+    "test:browser": "node test/browser.mjs",
+    "bench:browser": "node scripts/bench-browser.mjs",
+    "serve": "node scripts/serve.mjs",
+    "bench": "node scripts/bench.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
