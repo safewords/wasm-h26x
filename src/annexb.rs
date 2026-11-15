@@ -139,8 +139,9 @@ impl AnnexBReader {
         self.frames
     }
 
-    /// Seconds per frame as `(num, den)`, from the first sequence parameter
-    /// set's VUI timing information, if it has one.
+    /// Seconds per frame as `(num, den)`, from the VUI timing information
+    /// of the stream's sequence parameter sets (the last that has any; a
+    /// stream normally repeats one), if they carry it.
     pub fn frame_duration(&self) -> Option<(u32, u32)> {
         self.frame_duration
     }
