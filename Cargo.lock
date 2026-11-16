@@ -332,7 +332,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 [[package]]
 name = "rivet-container"
 version = "0.2.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#88a494076a3173fc3b6a8f990bf31010d4ca7290"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
 dependencies = [
  "anyhow",
  "bytes",
@@ -349,7 +349,7 @@ dependencies = [
 [[package]]
 name = "rivet-frame"
 version = "0.2.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#88a494076a3173fc3b6a8f990bf31010d4ca7290"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
 dependencies = [
  "bytes",
 ]
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "rivet-h26x"
 version = "0.2.0"
-source = "git+https://github.com/safewords/rivet-h26x-codecs?rev=a26393e4ff2d6823b65fa3568849ba6a114e1075#a26393e4ff2d6823b65fa3568849ba6a114e1075"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
 dependencies = [
  "thiserror 2.0.21",
 ]
@@ -365,7 +365,7 @@ dependencies = [
 [[package]]
 name = "rivet-vorbis"
 version = "0.1.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#88a494076a3173fc3b6a8f990bf31010d4ca7290"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
 dependencies = [
  "thiserror 2.0.21",
 ]

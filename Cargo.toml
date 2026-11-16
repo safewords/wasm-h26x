@@ -52,16 +52,6 @@ default = ["container"]
 # MP4/fMP4/MKV/TS input via rivet-container (`setSourceContainer`).
 container = ["dep:container", "dep:bytes"]
 
-# The threads builds need rivet-h26x to start its workers through an
-# embedder (`h26x::platform`, so that they can be Web Workers), which is on
-# rivet-h26x's `wasm/threads` branch and not yet in rivet `main`. Until it
-# is, both this crate and rivet-container take rivet-h26x from that branch,
-# at the revision Cargo.lock pins — one copy of it in the build. When the
-# branch is merged and rivet `main` carries it, delete this section and run
-# `cargo update -p rivet-h26x`.
-[patch."https://github.com/rivet-transcoder/rivet"]
-rivet-h26x = { git = "https://github.com/safewords/rivet-h26x-codecs", rev = "a26393e4ff2d6823b65fa3568849ba6a114e1075" }
-
 [profile.release]
 opt-level = 3
 lto = "fat"
