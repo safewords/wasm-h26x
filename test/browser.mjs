@@ -120,6 +120,8 @@ combos.push({ variant: 'simd', renderer: 'webgl', worker: false, file: 'hevc-mai
 combos.push({ variant: 'simd', renderer: 'webgl', worker: true, file: 'h264-high10-160x90.264', frames: 24 });
 combos.push({ variant: 'baseline', renderer: 'webgl', worker: false, file: 'h264-444-96x64.264', frames: 12 });
 combos.push({ variant: 'simd', renderer: '2d', worker: true, file: 'h264-gray-96x64.264', frames: 12 });
+// A two-layer H.265 stream: its base layer, every frame, and nothing of layer 1.
+combos.push({ variant: 'simd-threads', renderer: 'webgl', worker: true, threads: 4, file: 'hevc-layered-main10-178x100.265', frames: 24 });
 // The same streams inside containers, demuxed by rivet inside the wasm.
 combos.push({ variant: 'simd', renderer: 'webgl', worker: false, file: 'h264-cabac-b-320x180.fmp4' });
 combos.push({ variant: 'simd', renderer: 'webgl', worker: true, file: 'h264-cabac-b-320x180.mp4' });

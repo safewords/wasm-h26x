@@ -73,6 +73,14 @@ for spec in "${FIXTURES[@]}"; do
   rm testdata/h26xdec.log
 done
 
+# A two-layer H.265 stream (SHVC / MV-HEVC shape) whose base layer is
+# hevc-main10-178x100: no encoder run here writes a second layer, so
+# scripts/layered-fixture.mjs repeats every SPS, PPS and slice segment with
+# nuh_layer_id 1. The base layer must decode to exactly that stream's frames.
+node scripts/layered-fixture.mjs testdata/hevc-main10-178x100.265 testdata/hevc-layered-main10-178x100.265
+"$H26XDEC" testdata/hevc-layered-main10-178x100.265 > testdata/hevc-layered-main10-178x100.md5 2>/dev/null
+cmp testdata/hevc-layered-main10-178x100.md5 testdata/hevc-main10-178x100.md5
+
 # The containers. Every one holds a stream above, remuxed (no re-encode), and
 # must decode to that stream's MD5s: H.264 with B-frames (so presentation
 # order differs from decode order) in a plain MP4, a fragmented MP4, Matroska
