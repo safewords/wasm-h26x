@@ -1,6 +1,6 @@
 # Build, tests and release
 
-> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `4c72771`, and `pkg/` holds CI's build of it; v0.1.0 is tagged from there (npm publishing waits on credentials: see release.yml), the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
+> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `fee6ad6`, and `pkg/` holds CI's build of it; v0.1.1 is tagged from there (v0.1.0 from `69fe490`) (npm publishing waits on credentials: see release.yml), the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
 > **Owners (code):** `scripts/build.sh`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `package.json`, `Cargo.toml`, `rust-toolchain.toml`, `tests/`, `test/`, `scripts/`
 > **Related docs:** [variants-and-threading.md](./variants-and-threading.md), [`../performance.md`](../performance.md), [`../rivet.md`](../rivet.md)
 > **Last verified against code:** 2026-11-15 @ `bb70073`
@@ -110,8 +110,10 @@ needs the package to exist (`release.yml:13-19`).
 - **The committed `pkg/` can trail `main` by a commit.** As in wasm-av1,
   it is replaced only from CI's build (the pinned `wasm-opt`), never from a
   local one, by hand, after the source commit that changes the wasm. It is
-  CI's build of `4c72771` (run 43795375571, `wasm-opt -O3`, rivet
-  `f5d350e`, rivet-h26x `3ec8b66`), committed as `3b0ab49`. Before it,
+  CI's build of `fee6ad6` (run 43823831067, `wasm-opt -O3`, rivet
+  `918d54e`, rivet-h26x `3fcfda9`), committed as `bb569e0`. Before it,
+  `3b0ab49` held CI's build of `4c72771` (run 43795375571, rivet `f5d350e`,
+  rivet-h26x `3ec8b66`), and before that
   `ff68fe8` held CI's build of `66366a2` (run 43793316495), and
   `bfd7846` held CI's build of `2e79fa0` (run 43753157735, rivet-h26x
   `a26393e`, rivet `88a4940`). Between a source commit and
@@ -173,6 +175,12 @@ needs the package to exist (`release.yml:13-19`).
   (run 43793316495); Node 26/26 and `test/browser.mjs` 33/33 in each
   engine against it, and CI on `ff68fe8` (run 43794226963) green, its
   build matching the committed `pkg/` exactly.
+- `bb569e0` (2026-11-15): `pkg/` replaced with CI's build of `fee6ad6`
+  (0.1.1, run 43823831067): rivet-h26x `3fcfda9`, whose wasm residual
+  kernels avoid `v128.any_true` (Firefox 142-152 on arm64, Bugzilla
+  2042331). Node 26/26 against it; in Playwright's Firefox 142.0.1 arm64
+  the simd build decodes `h264-high10-160x90` 24/24 and
+  `h264-422p10-96x64` 12/12 bit-exact, where 0.1.0's gave 0/24 and 3/12.
 - `3b0ab49` (2026-11-15): `pkg/` replaced with CI's build of `4c72771`
   (run 43795375571, unequal luma and chroma depths widened); Node 26/26
   against it. `test/browser.mjs` 33/33 in each of Chromium, Firefox and
