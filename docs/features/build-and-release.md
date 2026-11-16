@@ -1,6 +1,6 @@
 # Build, tests and release
 
-> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `2e79fa0`, and `pkg/` holds CI's build of it; nothing is released yet, the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
+> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `66366a2` and on `ff68fe8`, and `pkg/` holds CI's build of `66366a2`; nothing is released yet, the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
 > **Owners (code):** `scripts/build.sh`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `package.json`, `Cargo.toml`, `rust-toolchain.toml`, `tests/`, `test/`, `scripts/`
 > **Related docs:** [variants-and-threading.md](./variants-and-threading.md), [`../performance.md`](../performance.md), [`../rivet.md`](../rivet.md)
 > **Last verified against code:** 2026-11-15 @ `bb70073`
@@ -109,19 +109,23 @@ needs the package to exist (`release.yml:13-19`).
 
 - **The committed `pkg/` can trail `main` by a commit.** As in wasm-av1,
   it is replaced only from CI's build (the pinned `wasm-opt`), never from a
-  local one, by hand, after the source commit that changes the wasm. As of
-  `bb70073` it is CI's build of `2e79fa0` (run 43753157735, `wasm-opt -O3`,
-  rivet-h26x `a26393e`, rivet `88a4940`), committed as `bfd7846`; nothing
-  that goes into the wasm has changed since. Between a source commit and
+  local one, by hand, after the source commit that changes the wasm. It is
+  CI's build of `66366a2` (run 43793316495, `wasm-opt -O3`, rivet
+  `f5d350e`, rivet-h26x `3ec8b66`), committed as `ff68fe8`. Before it,
+  `bfd7846` held CI's build of `2e79fa0` (run 43753157735, rivet-h26x
+  `a26393e`, rivet `88a4940`). Between a source commit and
   the `pkg/` commit that follows it, consumers of the release tarball are
   unaffected (release.yml builds the tag itself) and consumers of
   `github:safewords/wasm-h26x#main` get the previous wasm with newer JS.
   CI's "does the committed `pkg/` match this build?" step is a warning
   only (`ci.yml:98-103`): builds on different machines differ in the
   paths embedded in panic strings.
-- **Sizes** of that build (`pkg/manifest.json`): baseline 2 395 577 bytes
-  (766 444 gzipped), simd 2 692 513 (857 794), threads 2 413 460
-  (775 485), simd-threads 2 713 008 (872 018).
+- **Sizes** of that build (`pkg/manifest.json`; gzip is CI's `gzip -9`):
+  baseline 2 481 784 bytes (796 595 gzipped), simd 2 783 035 (892 567),
+  threads 2 502 061 (805 370), simd-threads 2 805 460 (902 058). The
+  `2e79fa0` build was 2 395 577 (766 444), 2 692 513 (857 794),
+  2 413 460 (775 485), 2 713 008 (872 018): +86 to +92 KB per variant,
+  +30 KB gzipped, from rivet-h26x's decoder (see below).
 - **rivet-h26x's encoders are in the crate but not in the `.wasm`.**
   Nothing here calls them, so LTO drops them: on 2026-11-15 the baseline
   `.wasm` before wasm-bindgen had no function from rivet-h26x's `encode`
@@ -164,6 +168,10 @@ needs the package to exist (`release.yml:13-19`).
   its tests, and the workflows and package as `@safewords/wasm-h26x` 0.1.0,
   each taken from wasm-av1 and adapted.
 - `bfd7846` (2026-11-15): `pkg/` committed, CI's build of `2e79fa0`.
+- `ff68fe8` (2026-11-15): `pkg/` replaced with CI's build of `66366a2`
+  (run 43793316495); Node 26/26 and `test/browser.mjs` 33/33 in each
+  engine against it, and CI on `ff68fe8` (run 43794226963) green, its
+  build matching the committed `pkg/` exactly.
 - `30688b9` (2026-11-15): `testdata/cmaf-hevc`, H.265 CMAF with open GOPs.
 - `a4c193c` (2026-11-15): the `[patch]` deleted; rivet-h26x and
   rivet-container from rivet `main` `f5d350e` (rivet-h26x `3ec8b66`).

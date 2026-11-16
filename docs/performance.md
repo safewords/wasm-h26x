@@ -2,8 +2,10 @@
 
 Measured on 2026-11-15 on one laptop (Apple M3 Max: 12 performance and 4
 efficiency cores, macOS), in Playwright 1.62's Chromium, WebKit and
-Firefox, on **CI's build of `2e79fa0`** — the `.wasm` files `pkg/` holds,
-`wasm-opt -O3` — with `scripts/bench-browser.mjs`. Nothing else was running.
+Firefox, on **CI's build of `2e79fa0`** — the `.wasm` files `pkg/` held
+until `ff68fe8` (rivet-h26x `a26393e`), `wasm-opt -O3` — with
+`scripts/bench-browser.mjs`. Nothing else was running. The build `pkg/`
+holds now (rivet-h26x `3ec8b66`) has not been benchmarked.
 
 **Method.** Each configuration decodes the clip inside a Worker
 (`scripts/bench-worker.js`), the frames consumed there (a strided hash of
@@ -129,5 +131,5 @@ decoder (`flush()` / `setSource()`) rather than make one per video.
 
 ## Size
 
-See the README: 2.40 MB baseline, 2.69 MB SIMD (766 / 858 KB gzip); most
+See the README: 2.48 MB baseline, 2.78 MB SIMD (797 / 893 KB gzip); most
 of it is the container demuxers.

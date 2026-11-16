@@ -51,21 +51,26 @@ defects.
 ## What you get
 
 ```
-pkg/baseline/wasm_h26x_bg.wasm      post-MVP wasm                     2.40 MB (766 KB gzip)
-pkg/simd/wasm_h26x_bg.wasm          + simd128 kernels                 2.69 MB (858 KB gzip)
-pkg/threads/wasm_h26x_bg.wasm       baseline + atomics/shared memory  2.41 MB (775 KB gzip)
-pkg/simd-threads/wasm_h26x_bg.wasm  simd + atomics/shared memory      2.71 MB (872 KB gzip)
+pkg/baseline/wasm_h26x_bg.wasm      post-MVP wasm                     2.48 MB (797 KB gzip)
+pkg/simd/wasm_h26x_bg.wasm          + simd128 kernels                 2.78 MB (893 KB gzip)
+pkg/threads/wasm_h26x_bg.wasm       baseline + atomics/shared memory  2.50 MB (805 KB gzip)
+pkg/simd-threads/wasm_h26x_bg.wasm  simd + atomics/shared memory      2.81 MB (902 KB gzip)
 pkg/thread-worker.js               the Worker each decoder thread runs in
 js/                                ESM wrapper: loader + feature detection, Decoder, WebGL/2D renderers, Worker, H26xPlayer, HlsH26xVideo
 ```
 
-Those sizes are CI's build of `2e79fa0` with `wasm-opt -O3` (2026-11-15),
-which is what `pkg/` holds (`pkg/manifest.json` has the bytes and the
-rivet-h26x and rivet revisions; gzip is `gzip -9`). As in wasm-av1, most of
-each file is the container demuxers: built without the `container` feature
-(and, locally, without `wasm-opt`) the baseline module is 1.51 MB (422 KB
-gzip) against 2.56 MB with it, the SIMD one 1.76 MB (505 KB gzip) against
-2.82 MB. rivet-h26x's encoder is not linked: nothing here calls it.
+Those sizes are CI's build of `66366a2` with `wasm-opt -O3` (2026-11-15,
+rivet `f5d350e`), which is what `pkg/` holds (`pkg/manifest.json` has the
+bytes and the rivet-h26x and rivet revisions; gzip is `gzip -9`). They are
+86 to 92 KB (30 KB gzipped) larger than `2e79fa0`'s on rivet-h26x
+`a26393e`: the code rivet-h26x's decoder gained (screen content coding,
+data partitioning, the parameter-set extensions) and the generic code it
+instantiates. As in wasm-av1, most of each file is the container demuxers:
+built without the `container` feature (and, locally, without `wasm-opt`,
+at `2e79fa0`) the baseline module is 1.51 MB (422 KB gzip) against 2.56 MB
+with it, the SIMD one 1.76 MB (505 KB gzip) against 2.82 MB. rivet-h26x's
+encoders are not linked: nothing here calls them, and no function of
+theirs is in the module.
 
 | build | needs | Chrome | Firefox | Safari |
 |---|---|---|---|---|
@@ -205,7 +210,7 @@ test below holds its frames to those, one by one.
 | `cargo test --release --target wasm32-unknown-unknown --test wasm_convert` (± `RUSTFLAGS=-C target-feature=+simd128`) | Inside wasm, in Node: the RGBA dispatch equals the scalar path — the SIMD build's v128 code included. |
 | `node --test test/decode.test.mjs` (after `scripts/build.sh`) | The built `.wasm`, all four variants, the same frames through the wasm-bindgen surface (so rivet-h26x's simd128 kernels are bit-exact too); the two threads builds on 1, 2, 4 and 8 threads, each wasm thread a `worker_threads` Worker on the shared memory, with the Workers kept and reused; SIMD and baseline RGBA **byte-identical**; push mode; containers; CMAF segments of both codecs; a seamless rung switch through the JS `Decoder`; ms/frame. |
 | `node --test test/copy-guard.test.mjs` | `tools/wasm-copy-guard`, the post-link pass the threads builds get for WebKit. |
-| `node test/browser.mjs` (needs Playwright — `PLAYWRIGHT_DIR` or a local install) | Headless Chromium + Firefox + WebKit: 32 combinations of variant (all four, and `auto`) × WebGL/2D × main thread/Worker × H.264/H.265 × 8-bit/10-bit/4:4:4/4:0:0 × elementary stream/MP4/fMP4/MKV/TS/HLS-CMAF (with rung switches), each played to the end with every frame shown, correctly paced, pixels on the canvas and the thread count that ran; a two-layer H.265 stream on four threads; and a live stream on four threads, pushed access unit by access unit. On 2026-11-15, on CI's build (the committed `pkg/`): 32 of 32 in each engine. |
+| `node test/browser.mjs` (needs Playwright — `PLAYWRIGHT_DIR` or a local install) | Headless Chromium + Firefox + WebKit: 32 combinations of variant (all four, and `auto`) × WebGL/2D × main thread/Worker × H.264/H.265 × 8-bit/10-bit/4:4:4/4:0:0 × elementary stream/MP4/fMP4/MKV/TS/HLS-CMAF (with rung switches), each played to the end with every frame shown, correctly paced, pixels on the canvas and the thread count that ran; a two-layer H.265 stream on four threads; and a live stream on four threads, pushed access unit by access unit. On 2026-11-15, on CI's build of `66366a2` (the committed `pkg/`): 33 of 33 in each engine. |
 | `node scripts/bench-browser.mjs` | Decode speed per variant and thread count in the real engines, the same frame hash in every configuration. |
 | `node scripts/bench.mjs` | Decode speed under Node, every frame checked against h26xdec's when `scripts/fetch-samples.sh` wrote the MD5s. |
 
