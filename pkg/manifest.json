@@ -1,15 +1,15 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "core": "rivet-h26x",
-  "h26x": "f5d350ede99030d99c1ad4e23fe60212434463cf",
-  "rivet": "f5d350ede99030d99c1ad4e23fe60212434463cf",
+  "h26x": "918d54ee256a55bcd73c5b7254af6ff5f8a7f44b",
+  "rivet": "918d54ee256a55bcd73c5b7254af6ff5f8a7f44b",
   "profile": "release",
   "features": "default",
   "threadWorker": "thread-worker.js",
   "variants": {
-    "baseline": { "wasm": "baseline/wasm_h26x_bg.wasm", "js": "baseline/wasm_h26x.js", "bytes": 2482277 },
-    "simd": { "wasm": "simd/wasm_h26x_bg.wasm", "js": "simd/wasm_h26x.js", "bytes": 2783410 },
-    "threads": { "wasm": "threads/wasm_h26x_bg.wasm", "js": "threads/wasm_h26x.js", "bytes": 2502553 },
-    "simd-threads": { "wasm": "simd-threads/wasm_h26x_bg.wasm", "js": "simd-threads/wasm_h26x.js", "bytes": 2805834 }
+    "baseline": { "wasm": "baseline/wasm_h26x_bg.wasm", "js": "baseline/wasm_h26x.js", "bytes": 2482288 },
+    "simd": { "wasm": "simd/wasm_h26x_bg.wasm", "js": "simd/wasm_h26x.js", "bytes": 2783463 },
+    "threads": { "wasm": "threads/wasm_h26x_bg.wasm", "js": "threads/wasm_h26x.js", "bytes": 2502542 },
+    "simd-threads": { "wasm": "simd-threads/wasm_h26x_bg.wasm", "js": "simd-threads/wasm_h26x.js", "bytes": 2805865 }
   }
 }

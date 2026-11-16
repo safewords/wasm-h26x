@@ -680,7 +680,7 @@ function __wbg_get_imports(memory) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
         },
-        __wbg___wasmH26xSpawnThread_8368c52215ae7413: function() { return handleError(function (arg0, arg1, arg2) {
+        __wbg___wasmH26xSpawnThread_320c3db14df92b93: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = globalThis.__wasmH26xSpawnThread(arg0, arg1, arg2 >>> 0);
             return ret;
         }, arguments); },
@@ -695,10 +695,10 @@ function __wbg_get_imports(memory) {
         __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_error_126091ba003c98db: function(arg0, arg1) {
+        __wbg_error_1d994218de3a625f: function(arg0, arg1) {
             console.error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_now_d54542e920b746d2: function() {
+        __wbg_now_ceded5617c9e0b62: function() {
             const ret = performance.now();
             return ret;
         },
