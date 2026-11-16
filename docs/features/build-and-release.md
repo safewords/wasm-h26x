@@ -175,8 +175,9 @@ needs the package to exist (`release.yml:13-19`).
   build matching the committed `pkg/` exactly.
 - `3b0ab49` (2026-11-15): `pkg/` replaced with CI's build of `4c72771`
   (run 43795375571, unequal luma and chroma depths widened); Node 26/26
-  against it. `test/browser.mjs` was not re-run: the change touches only
-  streams with unequal depths, which no browser combination plays.
+  against it. `test/browser.mjs` 33/33 in each of Chromium, Firefox and
+  WebKit against it too (Playwright 1.62.1, re-run at `69fe490`, the
+  v0.1.0 tag, after the release).
 - `30688b9` (2026-11-15): `testdata/cmaf-hevc`, H.265 CMAF with open GOPs.
 - `a4c193c` (2026-11-15): the `[patch]` deleted; rivet-h26x and
   rivet-container from rivet `main` `f5d350e` (rivet-h26x `3ec8b66`).
