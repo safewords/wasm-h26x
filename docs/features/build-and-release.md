@@ -1,6 +1,6 @@
 # Build, tests and release
 
-> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `66366a2` and on `ff68fe8`, and `pkg/` holds CI's build of `66366a2`; nothing is released yet, the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
+> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `4c72771`, and `pkg/` holds CI's build of it; v0.1.0 is tagged from there (npm publishing waits on credentials: see release.yml), the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
 > **Owners (code):** `scripts/build.sh`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `package.json`, `Cargo.toml`, `rust-toolchain.toml`, `tests/`, `test/`, `scripts/`
 > **Related docs:** [variants-and-threading.md](./variants-and-threading.md), [`../performance.md`](../performance.md), [`../rivet.md`](../rivet.md)
 > **Last verified against code:** 2026-11-15 @ `bb70073`
@@ -110,8 +110,9 @@ needs the package to exist (`release.yml:13-19`).
 - **The committed `pkg/` can trail `main` by a commit.** As in wasm-av1,
   it is replaced only from CI's build (the pinned `wasm-opt`), never from a
   local one, by hand, after the source commit that changes the wasm. It is
-  CI's build of `66366a2` (run 43793316495, `wasm-opt -O3`, rivet
-  `f5d350e`, rivet-h26x `3ec8b66`), committed as `ff68fe8`. Before it,
+  CI's build of `4c72771` (run 43795375571, `wasm-opt -O3`, rivet
+  `f5d350e`, rivet-h26x `3ec8b66`), committed as `3b0ab49`. Before it,
+  `ff68fe8` held CI's build of `66366a2` (run 43793316495), and
   `bfd7846` held CI's build of `2e79fa0` (run 43753157735, rivet-h26x
   `a26393e`, rivet `88a4940`). Between a source commit and
   the `pkg/` commit that follows it, consumers of the release tarball are
@@ -172,6 +173,10 @@ needs the package to exist (`release.yml:13-19`).
   (run 43793316495); Node 26/26 and `test/browser.mjs` 33/33 in each
   engine against it, and CI on `ff68fe8` (run 43794226963) green, its
   build matching the committed `pkg/` exactly.
+- `3b0ab49` (2026-11-15): `pkg/` replaced with CI's build of `4c72771`
+  (run 43795375571, unequal luma and chroma depths widened); Node 26/26
+  against it. `test/browser.mjs` was not re-run: the change touches only
+  streams with unequal depths, which no browser combination plays.
 - `30688b9` (2026-11-15): `testdata/cmaf-hevc`, H.265 CMAF with open GOPs.
 - `a4c193c` (2026-11-15): the `[patch]` deleted; rivet-h26x and
   rivet-container from rivet `main` `f5d350e` (rivet-h26x `3ec8b66`).

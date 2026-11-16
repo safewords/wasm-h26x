@@ -15,8 +15,8 @@ detection, a `Decoder` wrapper, a decode Worker, WebGL and 2D renderers,
 `H26xPlayer` and `HlsH26xVideo`. It is a library, not a service: nothing
 deploys. A `v*` tag builds and publishes `@safewords/wasm-h26x` to npm and
 to a GitHub Release; as of `bb70073` (0.1.0) there is no tag and no
-consumer. `pkg/` holds CI's build of `66366a2`, committed by hand
-(`ff68fe8`). Pushing `main` only runs CI.
+consumer. `pkg/` holds CI's build of `4c72771`, committed by hand
+(`3b0ab49`). Pushing `main` only runs CI.
 
 What is new against wasm-av1 is in the Rust: `src/units.rs` finds
 access-unit boundaries and decides which pictures are output, so that each
@@ -112,7 +112,7 @@ Worker protocol, the HLS layer.
 | Frames & rendering | **WebGL draws frames above 8 bits through RGBA.** They are converted in wasm on the CPU every frame and reach the GPU as 8-bit (`js/render.js:165-171`); in a Worker both the planes and the RGBA are copied and posted (`js/worker.js:69-72`). | Low |
 | Decoder core | **`units_in_flight` is an upper bound with threads.** It counts every pending pts (`src/core.rs:260-266`), including pictures that only more input or the end can release, and pts that lost their picture. The decode Worker re-polls every 4 ms while it is not 0 (`js/worker.js:82-87`): on a live stream waiting for input, until input comes; after a lost picture, until the source ends. | Low |
 | Decoder core | **Output lags input**, with one thread too: a picture leaves only after the next one begins and when the reorder buffer lets it, and with threads a few units later still. A caller that stops calling `run()` at `STARVED` loses the frames in flight until it feeds more or ends the stream. | Low |
-| Build & release | The committed `pkg/` is replaced only from CI's build, by hand, after the source commit that changes it (`ff68fe8` holds CI's build of `66366a2`). Between the two a `github:safewords/wasm-h26x#main` consumer gets the previous wasm with the new JS. CI's "does the committed `pkg/` match" step is a warning only (`ci.yml:101-103`). | Low |
+| Build & release | The committed `pkg/` is replaced only from CI's build, by hand, after the source commit that changes it (`3b0ab49` holds CI's build of `4c72771`). Between the two a `github:safewords/wasm-h26x#main` consumer gets the previous wasm with the new JS. CI's "does the committed `pkg/` match" step is a warning only (`ci.yml:101-103`). | Low |
 | Build & release | `scripts/build.sh` does not run on a stock macOS (checked 2026-11-15): GNU-only sed expressions (`:48`, `:50`), empty arrays under `set -u` on bash 3.2 (`:75`), GNU `stat -c %s` (`:144`). | Low |
 | Player & HLS | `_switchAtBoundary` locates the decoding segment by comparing cumulative pushed samples with `stats.decoder.accessUnitsIn`, which is never reset by a flush and counts past the 64-entry `_pushed` window (`js/hls.js:343-349`, `449`). After a seek or 64 segments, a boundary switch lands after everything already pushed: correct, but up to `prefetchSeconds` late. | Low |
 

@@ -59,7 +59,7 @@ pkg/thread-worker.js               the Worker each decoder thread runs in
 js/                                ESM wrapper: loader + feature detection, Decoder, WebGL/2D renderers, Worker, H26xPlayer, HlsH26xVideo
 ```
 
-Those sizes are CI's build of `66366a2` with `wasm-opt -O3` (2026-11-15,
+Those sizes are CI's build of `4c72771` with `wasm-opt -O3` (2026-11-15,
 rivet `f5d350e`), which is what `pkg/` holds (`pkg/manifest.json` has the
 bytes and the rivet-h26x and rivet revisions; gzip is `gzip -9`). They are
 86 to 92 KB (30 KB gzipped) larger than `2e79fa0`'s on rivet-h26x
