@@ -65,10 +65,10 @@ stateDiagram-v2
 - `inner`: the core (`src/core.rs:97-109`): `codec`, `dec` (an
   `h26x::h264::H264Decoder` or `h26x::hevc::HevcDecoder`, boxed, made by the
   first unit after a reset, `src/core.rs:54-59`, `172`), the `Tracker`
-  (`src/units.rs:144-161`), `pending` (the pts of units whose frames have
+  (`src/units.rs:140-157`), `pending` (the pts of units whose frames have
   not come out, ascending, each with the colour description it came
   under), `ready` (frames decoded and not pulled) and `dropped` (always 0
-  today, kept for the shape of `decoder.rs`, `src/core.rs:261-263`).
+  today, kept for the shape of `decoder.rs`, `src/core.rs:251-253`).
 - `source`: `AnnexB`, `Container` or `Push` (`src/decoder.rs:152-165`);
   see [input-sources.md](./input-sources.md).
 - `ring: VecDeque<Frame>`, capped at `Config::max_buffered` (default 10,
@@ -88,7 +88,7 @@ stateDiagram-v2
 | Rust | `run_until_full()` | `run` until anything but `Consumed` (`src/decoder.rs:759-766`) |
 | Rust | `next_frame`, `peek_next`, `current_frame`, `take_current_frame` | `src/decoder.rs:737-756` |
 | Rust | `finished()` | `src/decoder.rs:618-620` |
-| Rust | `units_in_flight()` | Pts waiting for their frames, with more than one thread; always 0 with one (`src/decoder.rs:602-604`, `src/core.rs:270-276`) |
+| Rust | `units_in_flight()` | Pts waiting for their frames, with more than one thread; always 0 with one (`src/decoder.rs:602-604`, `src/core.rs:260-266`) |
 | Rust | `codec()`, `set_codec(label)` | `src/decoder.rs:282-296`; a change of codec resets |
 | Rust | `flush()` | `src/decoder.rs:561-574` |
 | wasm | `new H26xDecoder(maxBuffered?, threads?, codec?)` | `src/wasm.rs:138-157`; `threads()` reports what applied, `codec()` what is known |
@@ -123,17 +123,17 @@ with a message. In wasm every error becomes a thrown `JsError` with the
    `src/decoder.rs:721-731`); if that fills it, `Full`.
 3. Take the next access unit from the source. None available and the
    source not exhausted: `Starved`. None available and the source
-   exhausted: the core's `finish` (`src/core.rs:235-246`) flushes
+   exhausted: the core's `finish` (`src/core.rs:225-236`) flushes
    rivet-h26x, waits for every picture still in it, clears whatever pts
    are left (no frame will come for them), and the frames are collected;
    `Full` if they did not all fit into the ring, else `EndOfStream`.
-4. Otherwise `send(data, pts)` (`src/core.rs:161-202`): the unit is split
+4. Otherwise `send(data, pts)` (`src/core.rs:161-192`): the unit is split
    at its start codes; each NAL unit goes through the `Tracker` and then to
    rivet-h26x's `push_nal`. Every NAL unit the tracker says begins an
-   output frame (`NalEvent::new_frame`, `src/units.rs:101-113`) puts the
-   unit's pts into `pending`, kept sorted (`src/core.rs:196-199`). Then
+   output frame (`NalEvent::new_frame`, `src/units.rs:101-109`) puts the
+   unit's pts into `pending`, kept sorted (`src/core.rs:186-189`). Then
    the finished pictures are taken without waiting (`try_next_picture`),
-   and **each takes the smallest pending pts** (`src/core.rs:206-230`).
+   and **each takes the smallest pending pts** (`src/core.rs:196-220`).
    `run` returns `Consumed`; a `Decode` error counts in `decode_errors`
    and propagates after the frames are collected.
 
@@ -142,29 +142,27 @@ conforming stream is presentation order, so the next frame out is always
 the one with the earliest pts not yet given out (`src/core.rs:12-20`).
 That holds only if every pts put in has exactly one frame coming out. The
 tracker therefore leaves out the units whose pictures are not output on
-their own: the second field of an H.264 field pair (`src/units.rs:240-264`)
+their own: the second field of an H.264 field pair (`src/units.rs:236-260`)
 and an H.265 RASL picture the decoder skips because its IRAP started the
 stream, followed an end of sequence, or was an IDR/BLA
-(`src/units.rs:376-386`). Where the assumption fails, see Edge cases.
+(`src/units.rs:366-376`). Where the assumption fails, see Edge cases.
 
 **H.264 SPS change.** When an H.264 SPS replaces a different one of the
-same id (a new size, another rendition), `send` first calls rivet-h26x's
-`flush()` (`src/core.rs:181-190`, flag set at `src/units.rs:279`). The new
-IDR picture would output every picture still waiting, and rivet-h26x's
-H.264 DPB crops whatever it outputs with the window of the newest SPS (it
-keeps one window, not one per picture), so the waiting pictures are output
-first, under the window they were decoded with. It is a workaround for
-that behaviour, not something the standard asks for; H.265 is not
-affected, its DPB keeps the window per picture.
+same id (a new size, another rendition), nothing special happens here:
+rivet-h26x crops every picture with the window of the SPS it was decoded
+with, in both codecs, so the pictures of the old sequence still waiting
+for output keep their size. Until rivet-h26x did (it cropped H.264
+pictures with the newest SPS's window), `send` flushed the decoder before
+such an SPS; that workaround is gone (`../rivet-h26x.md`).
 
 `finished()` is source exhausted, nothing pending in the core, **and**
-every decoded frame popped (`src/decoder.rs:618-620`, `src/core.rs:280-282`).
+every decoded frame popped (`src/decoder.rs:618-620`, `src/core.rs:270-272`).
 At the end of a source it needs the `run()` of step 3 first, which drains
 the decoder, on any thread count.
 
 `units_in_flight()` is what a caller polls on between `run()`s with
 threads: after a `Starved`, while it is not 0, a later `run()` may collect
-frames with no new input. It is `pending.len()` (`src/core.rs:270-276`):
+frames with no new input. It is `pending.len()` (`src/core.rs:260-266`):
 the pictures being decoded on the pool **and** those waiting in the
 reorder buffer for later pictures, which only more input or the end of
 the source releases. It is therefore an upper bound. The decode Worker
@@ -176,7 +174,7 @@ ring cleared, `last_sent_pts` forgotten) and then: an elementary stream
 rewinds, a container source is **dropped** (rivet is forward-only), push
 mode clears its queue. rivet-h26x has no reset, so the core's `flush`
 (`src/core.rs:146-154`) drops the decoder; the next unit makes a new one.
-The tracker restarts (`src/units.rs:186-192`): parameter sets are kept, and
+The tracker restarts (`src/units.rs:182-188`): parameter sets are kept, and
 the next H.265 IRAP is treated as the start of a stream. On a threads build
 dropping the decoder waits until each of its pool's workers has left the
 pool; the Workers that ran them are kept for the next decoder
@@ -186,13 +184,14 @@ pool; the Workers that ran them are kept for the next decoder
 
 Cargo features (`Cargo.toml:50-53`): `container` (rivet's demuxers), on by
 default, and nothing else. rivet-h26x is not optional and has no build
-options: both codecs and every bit depth up to 16 are always in. It is
-taken from rivet `main`, but `Cargo.toml:62-63` patches it to the
-`wasm/threads` branch of `safewords/rivet-h26x-codecs` at `a26393e`, which
-carries the `h26x::platform` hook the threads builds need
-([build-and-release.md](./build-and-release.md)). The release profile is
-fat LTO, one codegen unit, `panic = "abort"` (`Cargo.toml:65-71`), so a
-panic in wasm is a trap, not an exception.
+options: both codecs, every profile and tool it decodes and every bit
+depth up to 16 are always in. It is taken from rivet `main` (`Cargo.toml:24`)
+at the revision `Cargo.lock` pins, with the `h26x::platform` hook the
+threads builds need ([build-and-release.md](./build-and-release.md)). Its
+encoders are in the same crate but nothing here calls them, and none of
+their code reaches the `.wasm`. The release profile is fat LTO, one codegen
+unit, `panic = "abort"` (`Cargo.toml:55-61`), so a panic in wasm is a trap,
+not an exception.
 
 ### Edge cases & gotchas
 
@@ -204,7 +203,7 @@ panic in wasm is a trap, not an exception.
   picture with `pic_output_flag` 0, pictures discarded unshown by
   `no_output_of_prior_pics_flag`, or a RASL picture the two disagree about.
   Nothing detects the shift. The reverse (more frames than pts) gives
-  frames a `None` pts (`src/core.rs:217-228`), and the player falls back to
+  frames a `None` pts (`src/core.rs:207-218`), and the player falls back to
   counting frames. Field pairing and RASL skipping are not covered by any
   fixture: all are progressive, every stream starts at an IDR, and the
   open-GOP H.265 CMAF fixture (`testdata/cmaf-hevc`) is decoded
@@ -219,7 +218,7 @@ panic in wasm is a trap, not an exception.
   `i64` (`src/wasm.rs:251-255`); `NaN` becomes 0.
 - **A damaged picture is not dropped as a unit.** `send` pushes every NAL
   unit of the access unit even after one is refused and reports the first
-  error (`src/core.rs:174-201`); what rivet-h26x makes of the rest is its
+  error (`src/core.rs:174-191`); what rivet-h26x makes of the rest is its
   own. The error counts once in `decode_errors`.
 - **The codec is guessed when nobody says.** `sniff` scores the first 32
   NAL units against both header layouts (`src/units.rs:69-97`). It decides
@@ -232,16 +231,21 @@ panic in wasm is a trap, not an exception.
   one unit and expects its frame from the same `run()` gets it a few calls
   later, or at the end of the input. An error is reported by the `run()`
   whose unit was refused, since rivet-h26x reports errors as data goes in.
-- **The H.264 SPS-change drain stalls with threads.** `flush()` waits for
-  every picture in flight before the new sequence's first picture is
-  pushed. And it fires only on a changed SPS of the *same* id; a rendition
-  that switches to an SPS under another id with a different cropping
-  window is cropped wrongly for the pictures still waiting.
+- **Layers above the base are passed over twice.** The tracker ignores
+  every H.265 NAL unit with `nuh_layer_id` > 0 for access-unit boundaries
+  and frames (`src/units.rs:356-359`), and rivet-h26x discards them, so a
+  multi-layer (SHVC, MV-HEVC) stream gives its base layer's frames with
+  their own pts (`testdata/hevc-layered-main10-178x100`). Nothing reports that
+  other layers were there.
 
 ## History & references
 
 - `1a7e686` (2026-11-15): the crate, wasm-av1's `decoder.rs` around
   rivet-h26x, with `units.rs` and `annexb.rs` new.
+- `07e14e3` (2026-11-15): the H.264 SPS-change flush removed, now that
+  rivet-h26x (`3ec8b66`) crops each picture with its own SPS's window.
+- `42acb04` (2026-11-15): `testdata/hevc-layered-main10-178x100`, a
+  two-layer H.265 stream; its base layer's frames and pts come out.
 - Upstream: GoogleChromeLabs/wasm-av1 `decode-av1.c` (`AVX_Decoder_*`), by
   way of wasm-av1.
 - `tests/decode.rs`: every elementary-stream fixture equals rivet-h26x's
@@ -249,14 +253,15 @@ panic in wasm is a trap, not an exception.
   4 threads, with pts 0, 1, 2… in presentation order; push mode equals the
   elementary stream (1 and 3 threads); flush rewinds; the ring and
   `finished`; the codec told or given; the VUI frame rate. Run on
-  2026-11-15 on macOS aarch64: 17 unit, 7 decode and 3 container tests
-  pass with `cargo test --release`.
+  2026-11-15 on macOS aarch64 at `42acb04` (11 fixtures): 17 unit, 7 decode
+  and 3 container tests pass with `cargo test --release`, and 17 unit and
+  7 decode with `--no-default-features`.
 
 ## Proposed / Ideas (backlog)
 
 | Idea | Motivation | Sketch | Status |
 |---|---|---|---|
 | Take the pts from rivet-h26x | No assumption about which pictures are output | rivet-h26x carries an opaque per-picture tag from `push_nal` to `Picture`; the core stops sorting | Proposed |
-| Crop per picture in rivet-h26x's H.264 DPB | Drop the SPS-change drain and its stall | Keep the window on the DPB entry, as its H.265 DPB does | Proposed |
+| Crop per picture in rivet-h26x's H.264 DPB | Drop the SPS-change drain and its stall | Keep the window on the DPB entry, as its H.265 DPB does | Done (rivet-h26x; drain dropped in `07e14e3`) |
 | Interlaced fixtures, and a stream that starts at a CRA | The tracker's field pairing and RASL skipping are untested | PAFF/MBAFF H.264 in `make-fixtures.sh`; decode `testdata/cmaf-hevc/seg1.m4s` alone after its init segment | Proposed |
 | Reset `Stats` on source change | Comparable counters after a seek | Zero in `reset_state`, or expose a `since_reset` copy | Proposed |

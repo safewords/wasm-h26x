@@ -58,9 +58,8 @@ features), which leaves elementary streams and pushed access units.
 
 rivet-container also depends on rivet-h26x (its SPS parsers give the VUI
 colour description when an MP4 has no `colr` box). It is the same
-rivet-h26x as the decoder's — one copy in the build (see
-[rivet-h26x.md](rivet-h26x.md) for the `[patch]` that keeps it so while
-the threads hook is on a branch).
+rivet-h26x as the decoder's — both come from rivet `main` at the revision
+`Cargo.lock` pins — so there is one copy in the build.
 
 ## Licence note
 

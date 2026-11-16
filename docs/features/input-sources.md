@@ -64,7 +64,7 @@ smallest pts not given out ([decoder-core.md](./decoder-core.md)), frames
 come out numbered 0, 1, 2… in presentation order. The time base is the
 frame duration in the SPS's VUI timing information (`src/annexb.rs:142-147`;
 for H.264 twice `num_units_in_tick` over `time_scale`, since its ticks are
-fields, `src/units.rs:282-286`); without one it is unknown and the player
+fields, `src/units.rs:275-279`); without one it is unknown and the player
 uses its fallback rate. Cutting up front gives the frame count
 (`frameCountHint`) and a free rewind: `flush` goes back to the first unit
 (`src/annexb.rs:164-166`). A stream that is cut short decodes as far as it
@@ -88,7 +88,7 @@ segment's first picture, which in a CMAF H.264 segment is an IDR
 (`src/decoder.rs:353-361`). For H.265, `set_init_segment` called a second
 time sets `new_sequence` (`src/decoder.rs:372`), and the first sample of
 the next segment gets an end-of-sequence NAL unit (type 36) in front
-(`src/decoder.rs:420-423`). The decoder (and the tracker, `src/units.rs:409-414`)
+(`src/decoder.rs:420-423`). The decoder (and the tracker, `src/units.rs:398-403`)
 then treats that segment's IRAP as the start of a stream: if it is a CRA,
 its RASL pictures, which refer to pictures of the other rendition that the
 decoder never had, are skipped instead of decoded from the wrong
@@ -161,7 +161,7 @@ sequenceDiagram
   it to `setSourceContainer` directly.
 - The time base of an elementary stream comes from the last SPS in it that
   has VUI timing (`src/annexb.rs:142-147`); the tracker overwrites it on
-  each such SPS (`src/units.rs:280-286`, `398-402`). A stream normally
+  each such SPS (`src/units.rs:273-279`, `387-391`). A stream normally
   repeats one SPS, so this matters only for one that changes its rate.
 
 ## History & references

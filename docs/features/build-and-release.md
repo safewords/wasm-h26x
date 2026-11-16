@@ -1,6 +1,6 @@
 # Build, tests and release
 
-> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `2e79fa0`, and `pkg/` holds CI's build of it; nothing is released yet, the committed `pkg/` is replaced by hand so it can trail `main` by a commit, the decoder comes from an unmerged rivet-h26x branch, and `scripts/build.sh` does not run on a stock macOS.
+> **Status:** PARTIAL — the build, the tests and both workflows are in place, CI passed on `2e79fa0`, and `pkg/` holds CI's build of it; nothing is released yet, the committed `pkg/` is replaced by hand so it can trail `main` by a commit, and `scripts/build.sh` does not run on a stock macOS.
 > **Owners (code):** `scripts/build.sh`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `package.json`, `Cargo.toml`, `rust-toolchain.toml`, `tests/`, `test/`, `scripts/`
 > **Related docs:** [variants-and-threading.md](./variants-and-threading.md), [`../performance.md`](../performance.md), [`../rivet.md`](../rivet.md)
 > **Last verified against code:** 2026-11-15 @ `bb70073`
@@ -26,8 +26,7 @@ flowchart LR
   rel --> gh[GitHub Release<br/>.tgz, pkg .zip, SHA256SUMS]
   rel --> npm[npm @safewords/wasm-h26x<br/>provenance]
   ci -. artifact pkg/, committed by hand .-> pkgdir[pkg/ in main]
-  h26x[(rivet-h26x<br/>safewords/rivet-h26x-codecs<br/>wasm/threads @ a26393e)] -. Cargo.toml patch .-> ci
-  rivet[(rivet main<br/>rivet-container)] -.-> ci
+  rivet[(rivet main<br/>rivet-h26x, rivet-container)] -. Cargo.lock .-> ci
 ```
 
 ## How it works today
@@ -49,9 +48,11 @@ native links (`ci.yml:21-50`). The threads variants rebuild std with
 `-Zbuild-std` under `RUSTC_BOOTSTRAP=1` (`scripts/build.sh:68-75`).
 
 Dependencies: `h26x` and `container` are both taken from rivet `main`
-(`Cargo.toml:24`, `31`), and `Cargo.toml:62-63` patches rivet-h26x, for
-both, to `safewords/rivet-h26x-codecs` at `a26393e` on its `wasm/threads`
-branch, which has the `h26x::platform` hook the threads builds need.
+(`Cargo.toml:24`, `31`) at the revision `Cargo.lock` pins (`f5d350e`,
+which carries rivet-h26x `3ec8b66` with the `h26x::platform` hook the
+threads builds need); `cargo update -p rivet-h26x -p rivet-container`
+moves both. Until `a4c193c` a `[patch]` took rivet-h26x from its
+`wasm/threads` branch, which has since been merged.
 
 ### Flow: tests
 
@@ -61,7 +62,7 @@ branch, which has the `h26x::platform` hook the threads builds need.
 | `cargo test --target wasm32-unknown-unknown --test wasm_convert` (± simd128) | RGBA dispatch equals scalar on 55 combinations inside wasm |
 | `node --test test/decode.test.mjs` | The built `.wasm`, all four variants: every fixture's frames equal `h26xdec` in baseline and SIMD; the `threads` and `simd-threads` builds on 1, 2, 4 and 8 threads, each wasm thread a `worker_threads` Worker, with the number of Workers asked for (`test/threads-node.mjs`, one process per run so a decoder left waiting fails instead of hanging); SIMD and baseline RGBA byte-identical; push mode; errors; VUI frame rate; containers and segments, H.265 segments with open GOPs among them; a rung switch through the JS `Decoder`; `sniff` and the HLS CODECS helpers |
 | `node --test test/copy-guard.test.mjs` (builds `tools/wasm-copy-guard` with cargo) | The pass the threads variants get behaves as memmove/memset on both of its paths |
-| `node test/browser.mjs` (Playwright, not in CI) | Chromium, Firefox, WebKit × variants × renderers × main thread/Worker × formats, HLS, rung switches and thread counts, on a cross-origin-isolated page: 32 combinations |
+| `node test/browser.mjs` (Playwright, not in CI) | Chromium, Firefox, WebKit × variants × renderers × main thread/Worker × formats, HLS, rung switches and thread counts, a two-layer H.265 stream, on a cross-origin-isolated page: 33 combinations |
 
 Run on 2026-11-15 on macOS aarch64: `cargo test --release` passes (17 unit,
 7 decode and 3 container tests); Node 25/25 against a local build of all
@@ -73,9 +74,23 @@ four variants, and 25/25 against CI's build committed in `bfd7846`;
 writes one composition time twice at that fixture's open-GOP boundary, so
 there the pts are checked only for order (`tests/container.rs:124-133`).
 
+Run again on 2026-11-15 on macOS aarch64 at `42acb04` (rivet `f5d350e`):
+`cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`;
+`cargo test --release` 17 unit + 7 decode + 3 container,
+`--no-default-features` 17 + 7; `wasm_convert` in wasm 2/2, baseline and
+simd128; `scripts/build.sh` (all four variants, wasm-bindgen 0.2.130,
+binaryen `version_123`); Node 26/26; `test/browser.mjs` 33/33 in each of
+Chromium, Firefox and WebKit (Playwright 1.62.1). `build.sh` ran as
+`zsh --emulate ksh scripts/build.sh` with a `sed` shim that rewrites `p}`
+to `p;}` for `/usr/bin/sed` and GNU `stat` (`gstat`) as `stat` first on
+`PATH`.
+
 `scripts/make-fixtures.sh` regenerates `testdata/` with ffmpeg (libx264,
 libx265) and takes each fixture's per-frame MD5 from rivet-h26x's
-`h26xdec` example, built at the revision `Cargo.lock` pins (`H26XDEC`).
+`h26xdec` example, built at the revision `Cargo.lock` pins (`H26XDEC`);
+`scripts/layered-fixture.mjs` makes the two-layer H.265 fixture from the
+Main 10 one, whose MD5s it must equal. On 2026-11-15 h26xdec built at
+rivet-h26x `3ec8b66` gave every committed fixture's `.md5` byte for byte.
 `scripts/fetch-samples.sh` downloads Big Buck Bunny clips into
 `testdata/samples/` (not committed) for the demo and the benchmarks.
 
@@ -107,11 +122,15 @@ needs the package to exist (`release.yml:13-19`).
 - **Sizes** of that build (`pkg/manifest.json`): baseline 2 395 577 bytes
   (766 444 gzipped), simd 2 692 513 (857 794), threads 2 413 460
   (775 485), simd-threads 2 713 008 (872 018).
-- **The decoder is on an unmerged branch.** The `[patch]` in
-  `Cargo.toml:55-63` pins rivet-h26x to a revision of its `wasm/threads`
-  branch. `cargo update` does not move it; a fix in rivet-h26x reaches this
-  crate only by editing that revision, until the branch is merged into
-  rivet `main` and the section deleted.
+- **rivet-h26x's encoders are in the crate but not in the `.wasm`.**
+  Nothing here calls them, so LTO drops them: on 2026-11-15 the baseline
+  `.wasm` before wasm-bindgen had no function from rivet-h26x's `encode`
+  module, and the 92 KB of code it gained from rivet-h26x `a26393e` to
+  `3ec8b66` is the decoder (`hevc::ctu` +34 KB, `h264::decoder` +12 KB,
+  `hevc::decoder` +11 KB, the SPS/PPS/slice parsers +12 KB, `hevc::scc`
+  +1 KB, and the rest in `core`/`alloc` generics). Check the same way after
+  a bump: the release profile keeps function names until wasm-bindgen
+  strips them.
 - `scripts/build.sh` does not run on a stock macOS (checked 2026-11-15 on
   macOS with `/usr/bin/sed`, `/bin/bash` 3.2.57 and `/usr/bin/stat`): BSD
   sed rejects the `{n;s/…/p}` and `{n;n;s/…/p}` expressions ("bad flag in
@@ -146,6 +165,10 @@ needs the package to exist (`release.yml:13-19`).
   each taken from wasm-av1 and adapted.
 - `bfd7846` (2026-11-15): `pkg/` committed, CI's build of `2e79fa0`.
 - `30688b9` (2026-11-15): `testdata/cmaf-hevc`, H.265 CMAF with open GOPs.
+- `a4c193c` (2026-11-15): the `[patch]` deleted; rivet-h26x and
+  rivet-container from rivet `main` `f5d350e` (rivet-h26x `3ec8b66`).
+- `42acb04` (2026-11-15): `scripts/layered-fixture.mjs` and
+  `testdata/hevc-layered-main10-178x100`.
 - wasm-av1's `docs/features/build-and-release.md`: the history of the
   toolchain, the cooldown and the copy guard.
 

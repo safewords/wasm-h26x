@@ -31,13 +31,13 @@ from and how deep it can be (H.265 range extensions go to 16 bits).
 The packed layout is Y then Cb then Cr, no padding (`Frame::geometry`,
 `src/frame.rs:184-213`), which is exactly what WebCodecs' `I420` expects.
 rivet-h26x's `h26x::Picture` is already cropped and packed that way, so
-`frame_from_picture` (`src/core.rs:292-320`) moves the picture into the
+`frame_from_picture` (`src/core.rs:282-310`) moves the picture into the
 frame and copies nothing: `FrameData` keeps it (`src/frame.rs:123-135`)
 and dereferences to its packed bytes, and when the frame is dropped the
 buffer goes back to the decoder's pool.
 
 The colour description is the VUI's of the SPS most recently parsed when
-the unit went in (`src/core.rs:195`, `src/units.rs:280-289`, `398-404`),
+the unit went in (`src/core.rs:185`, `src/units.rs:273-282`, `387-393`),
 carried with that unit's pts to its frame.
 
 ### Interfaces
@@ -91,11 +91,13 @@ records the returned path in `stats.drawPath`.
   measured: [`../performance.md`](../performance.md) times 8-bit clips,
   decode only, without drawing or RGBA.
 - **Unequal luma and chroma depths are reported as the wider.**
-  `bit_depth` is `max(bit_depth, bit_depth_chroma)` (`src/core.rs:312`),
+  `bit_depth` is `max(bit_depth, bit_depth_chroma)` (`src/core.rs:302`),
   and the conversion, like the shader, reads every plane at that one depth
   (`src/convert.rs:175-180`). A stream whose chroma is deeper than its luma,
-  or the reverse (allowed in H.264 High 4:4:4 and H.265 range extensions),
-  decodes correctly but converts to the wrong colours. The planes
+  or the reverse (allowed in H.264's High 10 and higher profiles and in
+  H.265's range extensions, both of which rivet-h26x decodes at unequal
+  depths), decodes correctly but converts to the wrong colours. No fixture
+  has unequal depths: neither libx264 nor libx265 writes them. The planes
   themselves are right; a consumer that reads them has no field telling
   the two depths apart.
 - **Views are transient.** Any call that can decode may grow wasm memory

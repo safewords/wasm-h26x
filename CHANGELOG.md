@@ -18,10 +18,16 @@ for H.264 and H.265, with rivet-h26x in place of rivet-av1.
 - **rivet-h26x compiled to WebAssembly** in the four variants wasm-av1 has —
   baseline, SIMD128 (rivet-h26x's `simd128` kernels for both codecs, 8-bit
   and deeper), threads and SIMD + threads — with the same feature detection
-  and loader (`loadWasmH26x`). H.264 Baseline to High 4:4:4 and H.265 Main,
-  Main 10, Main 12 and the range extensions, as rivet-h26x decodes them
-  natively; every fixture decodes to rivet-h26x's own native output frame
-  by frame in every variant.
+  and loader (`loadWasmH26x`). What rivet-h26x decodes natively: H.264
+  Baseline to High 4:4:4, Extended with slice data partitioning, equal or
+  unequal luma and chroma depths, each picture cropped with its own SPS's
+  window; H.265 Main, Main 10, Main 12, the range extensions, separate
+  colour planes and screen content coding (palette, intra block copy, the
+  adaptive colour transform, adaptive MV resolution), and the base layer of
+  SHVC / MV-HEVC streams. Every fixture decodes to rivet-h26x's own native
+  output frame by frame in every variant. rivet-h26x and rivet-container
+  come from rivet `main` (`f5d350e`, rivet-h26x `3ec8b66`); rivet-h26x's
+  encoders are not linked.
 - **Input:** Annex-B elementary streams (`setSourceAnnexB`, codec told from
   the NAL units or given), cut into access units here; MP4, fragmented MP4 /
   CMAF, Matroska and MPEG-TS demuxed in the wasm by rivet-container
@@ -39,23 +45,23 @@ for H.264 and H.265, with rivet-h26x in place of rivet-av1.
   now sends with every such frame.
 - **Threads:** rivet-h26x's frame threading, and H.265's wavefront rows,
   tiles and slice segments, on Web Workers on shared memory — rivet-h26x's
-  pool started through its `platform` hook (branch `wasm/threads` of
-  rivet-h26x, taken by `[patch]` until it is merged), the Workers kept and
-  reused across decoders.
+  pool started through its `platform` hook, the Workers kept and reused
+  across decoders.
 - The JS API of wasm-av1 under new names: `Decoder`, `WorkerDecoder`,
   `H26xPlayer`, `HlsH26xVideo` (CODECS `avc1`/`avc3`/`hvc1`/`hev1`), the
   renderers, `sniff` (`'annexb' | 'mp4' | 'mkv' | 'ts'`).
 - Tests: native (every fixture frame by frame on 1, 2 and 4 threads, every
-  container, CMAF segments, a rendition switch), Node (every variant, the
-  threads builds on 1 to 8 threads), and Playwright (32 combinations in
-  each of Chromium, Firefox and WebKit). CI and release workflows as
-  wasm-av1's.
+  container, CMAF segments, a rendition switch on 1, 2 and 4 threads, a
+  two-layer H.265 stream), Node (every variant, the threads builds on 1 to
+  8 threads), and Playwright (33 combinations in each of Chromium, Firefox
+  and WebKit). CI and release workflows as wasm-av1's.
 
 ### Known
 
-- rivet-h26x's H.264 DPB crops waiting pictures with the newest SPS's
-  window; the decoder here outputs them before a changed SPS goes in
-  (docs/rivet-h26x.md).
+- Unequal luma and chroma bit depths (H.264 High profiles, H.265 range
+  extensions) decode exactly, but the frame reports the wider depth and
+  the RGBA conversion and the WebGL shader read every plane at it, so such
+  a stream shows the wrong colours (docs/features/frames-and-rendering.md).
 - In one WebKit page, a few dozen threads-build instances (each with its
   own shared memory) exhaust it; reuse one decoder (docs/performance.md).
 - Pictures that are decoded but not output (`pic_output_flag` 0, a refused

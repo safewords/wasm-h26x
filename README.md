@@ -14,8 +14,9 @@ decoder only: there is no encoder in it.
 Why: a site that serves H.264 or H.265 wants it to play where the browser
 cannot decode it — HEVC in Firefox and in browsers without hardware HEVC,
 H.264 in builds without a licensed decoder, and any profile the platform
-decoder refuses (High 10, 4:2:2, 4:4:4 H.264; Main 12 and the range
-extensions of H.265). This gives those pages a WebAssembly software decoder
+decoder refuses (Extended with data partitioning, High 10, 4:2:2, 4:4:4
+H.264; Main 12, the range extensions, separate colour planes and screen
+content coding of H.265, and the base layer of SHVC / MV-HEVC streams). This gives those pages a WebAssembly software decoder
 that the browser JIT compiles to NEON/SSE where the SIMD build is used, and
 that spreads over the cores where the page allows threads.
 
@@ -35,10 +36,9 @@ have the tables.
 
 **Nothing upstream is vendored.** rivet-h26x and rivet-container are git
 dependencies, two packages of rivet `main` (`Cargo.lock` pins the
-revision). For now rivet-h26x is patched to a branch of its own repository
-that adds the hook the threads builds need
-([docs/rivet-h26x.md](docs/rivet-h26x.md)); [docs/rivet.md](docs/rivet.md)
-is the demuxer. `pkg/` — the built `.wasm` + glue — is committed so a git
+revision). [docs/rivet-h26x.md](docs/rivet-h26x.md) is the decoder — what
+it decodes and the hook the threads builds use — and
+[docs/rivet.md](docs/rivet.md) the demuxer. `pkg/` — the built `.wasm` + glue — is committed so a git
 dependency (`github:safewords/wasm-h26x#sha`) carries it;
 `scripts/build.sh` regenerates it.
 
@@ -201,11 +201,11 @@ test below holds its frames to those, one by one.
 
 | Command | Proves |
 |---|---|
-| `cargo test --release` (and `--no-default-features`) | Native: access-unit cutting, Exp-Golomb, sniffing, geometry, colour conversion against a float reference (8 to 16 bits); every fixture — H.264 CAVLC, CABAC with B-pyramids, High 10, 4:2:2 10-bit, 4:4:4, 4:0:0; H.265 Main (WPP), Main 10 at 178×100, 4:4:4 — decodes to h26xdec's frames on 1, 2 and 4 threads, with pts in presentation order; push mode ≡ elementary stream; flush rewinds; MP4/fMP4/MKV/TS via rivet ≡ the elementary stream on 1 and 4 threads; CMAF segments (H.264, and H.265 with open GOPs, whose RASL pictures at the boundary must be decoded); a rung switch at a segment boundary. |
+| `cargo test --release` (and `--no-default-features`) | Native: access-unit cutting, Exp-Golomb, sniffing, geometry, colour conversion against a float reference (8 to 16 bits); every fixture — H.264 CAVLC, CABAC with B-pyramids, High 10, 4:2:2 10-bit, 4:4:4, 4:0:0; H.265 Main (WPP), Main 10 at 178×100, 4:4:4, and a two-layer stream whose base layer is the Main 10 one — decodes to h26xdec's frames on 1, 2 and 4 threads, with pts in presentation order; push mode ≡ elementary stream; flush rewinds; MP4/fMP4/MKV/TS via rivet ≡ the elementary stream on 1 and 4 threads; CMAF segments (H.264, and H.265 with open GOPs, whose RASL pictures at the boundary must be decoded); a rung switch at a segment boundary. |
 | `cargo test --release --target wasm32-unknown-unknown --test wasm_convert` (± `RUSTFLAGS=-C target-feature=+simd128`) | Inside wasm, in Node: the RGBA dispatch equals the scalar path — the SIMD build's v128 code included. |
 | `node --test test/decode.test.mjs` (after `scripts/build.sh`) | The built `.wasm`, all four variants, the same frames through the wasm-bindgen surface (so rivet-h26x's simd128 kernels are bit-exact too); the two threads builds on 1, 2, 4 and 8 threads, each wasm thread a `worker_threads` Worker on the shared memory, with the Workers kept and reused; SIMD and baseline RGBA **byte-identical**; push mode; containers; CMAF segments of both codecs; a seamless rung switch through the JS `Decoder`; ms/frame. |
 | `node --test test/copy-guard.test.mjs` | `tools/wasm-copy-guard`, the post-link pass the threads builds get for WebKit. |
-| `node test/browser.mjs` (needs Playwright — `PLAYWRIGHT_DIR` or a local install) | Headless Chromium + Firefox + WebKit: 31 combinations of variant (all four, and `auto`) × WebGL/2D × main thread/Worker × H.264/H.265 × 8-bit/10-bit/4:4:4/4:0:0 × elementary stream/MP4/fMP4/MKV/TS/HLS-CMAF (with rung switches), each played to the end with every frame shown, correctly paced, pixels on the canvas and the thread count that ran; and a live stream on four threads, pushed access unit by access unit. On 2026-11-15, on CI's build (the committed `pkg/`): 32 of 32 in each engine. |
+| `node test/browser.mjs` (needs Playwright — `PLAYWRIGHT_DIR` or a local install) | Headless Chromium + Firefox + WebKit: 32 combinations of variant (all four, and `auto`) × WebGL/2D × main thread/Worker × H.264/H.265 × 8-bit/10-bit/4:4:4/4:0:0 × elementary stream/MP4/fMP4/MKV/TS/HLS-CMAF (with rung switches), each played to the end with every frame shown, correctly paced, pixels on the canvas and the thread count that ran; a two-layer H.265 stream on four threads; and a live stream on four threads, pushed access unit by access unit. On 2026-11-15, on CI's build (the committed `pkg/`): 32 of 32 in each engine. |
 | `node scripts/bench-browser.mjs` | Decode speed per variant and thread count in the real engines, the same frame hash in every configuration. |
 | `node scripts/bench.mjs` | Decode speed under Node, every frame checked against h26xdec's when `scripts/fetch-samples.sh` wrote the MD5s. |
 

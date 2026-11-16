@@ -1,6 +1,6 @@
 # wasm variants, detection and threading
 
-> **Status:** PARTIAL — the four variants decode every fixture exactly in Node, and play in Chromium, Firefox and WebKit, the threads builds on real Workers; a thread Worker that never starts hangs the decoder and every later reset of it, WebKit runs out of memory after many threads-build instances in one page, and the threads hook is on an unmerged rivet-h26x branch.
+> **Status:** PARTIAL — the four variants decode every fixture exactly in Node, and play in Chromium, Firefox and WebKit, the threads builds on real Workers; a thread Worker that never starts hangs the decoder and every later reset of it, and WebKit runs out of memory after many threads-build instances in one page.
 > **Owners (code):** `js/detect.js`, `js/loader.js`, `src/threads.rs`, `js/thread-worker.js`, `scripts/build.sh`, `tools/wasm-copy-guard`, `Cargo.toml`
 > **Related docs:** [js-api-and-worker.md](./js-api-and-worker.md), [build-and-release.md](./build-and-release.md), [`../performance.md`](../performance.md), [`../integration.md`](../integration.md)
 > **Last verified against code:** 2026-11-15 @ `bb70073`
@@ -87,7 +87,8 @@ itself (`js/loader.js:45-46`).
 The wasm side is `src/threads.rs`. rivet-h26x starts its pool workers with
 `std::thread` natively; on `wasm32-unknown-unknown` std has neither threads
 nor a clock, so rivet-h26x's `h26x::platform` hook lets an embedder supply
-both (rivet-h26x `src/platform.rs`, on its `wasm/threads` branch).
+both (rivet-h26x `src/platform.rs`, in rivet `main` since rivet-h26x's
+`wasm/threads` branch was merged).
 `install()` (`src/threads.rs:186-194`), called when a decoder opens with
 more than one thread (`src/core.rs:114-117`), registers `spawn_body` and
 `performance.now()` once per instance. From then on:
@@ -154,11 +155,6 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
   `free` in the decode Worker blocks it for good. A Worker that traps
   inside a body (a panic is an abort) does the same. Nothing surfaces any
   of it as an `error` message.
-- **The threads hook is not in rivet `main`.** `Cargo.toml:55-63` patches
-  rivet-h26x to `safewords/rivet-h26x-codecs` at `a26393e` on its
-  `wasm/threads` branch, for both this crate and rivet-container. Until
-  that branch is merged, a `cargo update` of rivet does not update the
-  decoder.
 - **WebKit: `memory.copy` and `memory.fill` trap on memory another Worker
   grew.** The JavaScriptCore bug wasm-av1 found on 2026-11-12 applies to
   any threads build: an instance in one Worker keeps the old size of a
@@ -210,8 +206,12 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
 ## History & references
 
 - `1a7e686` (2026-11-15): `src/threads.rs`, `Slots` over rivet-h26x's
-  `h26x::platform` (rivet-h26x `a26393e`: "a pool waits, as it is dropped,
-  for the workers the embedder started").
+  `h26x::platform`, then on rivet-h26x's `wasm/threads` branch (`a26393e`:
+  "a pool waits, as it is dropped, for the workers the embedder started")
+  and taken through a `[patch]`.
+- `a4c193c` (2026-11-15): the branch merged into rivet-h26x and rivet `main`;
+  the `[patch]` deleted and rivet-h26x taken from rivet `main` (`f5d350e`,
+  rivet-h26x `3ec8b66`).
 - `55e3c2b` (2026-11-15): the JS side, wasm-av1's renamed;
   `test/threads-node.mjs` and the threads combinations of
   `test/browser.mjs`.
@@ -220,7 +220,9 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
   `worker_threads` Worker, every fixture frame by frame before the Workers
   are up and after. Run on 2026-11-15 against a local build: Node 25/25;
   `test/browser.mjs` 32/32 combinations in each of Chromium, Firefox and
-  WebKit (Playwright 1.62).
+  WebKit (Playwright 1.62). Again at `42acb04` (rivet-h26x from rivet
+  `main`, with the two-layer fixture): Node 26/26, `test/browser.mjs`
+  33/33 in each engine (Playwright 1.62.1).
 - [`../performance.md`](../performance.md) (2026-11-15): every variant on
   2 / 4 / 8 threads in three browsers, and the WebKit instance limit.
 - wasm-av1's `docs/features/variants-and-threading.md`: the spawn relay,
@@ -231,5 +233,5 @@ Thread count: `H26xPlayer` resolves `threads: 'auto'` to
 | Idea | Motivation | Sketch | Status |
 |---|---|---|---|
 | Report a dead thread | A hang becomes an error | `thread-worker.js` posts to the page; `WorkerDecoder` raises `onerror` and closes | Proposed |
-| Merge rivet-h26x `wasm/threads` | Drop the `[patch]`; `cargo update` reaches the decoder | Merge upstream, then delete the section and `cargo update -p rivet-h26x` | Proposed |
+| Merge rivet-h26x `wasm/threads` | Drop the `[patch]`; `cargo update` reaches the decoder | Merge upstream, then delete the section and `cargo update -p rivet-h26x` | Done (`a4c193c`) |
 | Live-push browser case | Exercise the re-poll path | 48 units pushed on four threads, no `eos`, 48 frames expected less the reorder depth | Proposed |
