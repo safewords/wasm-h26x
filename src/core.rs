@@ -279,7 +279,28 @@ impl Core {
 
 /// Take a decoded rivet-h26x picture as a frame: the picture moves in,
 /// nothing is copied.
-fn frame_from_picture(pic: h26x::Picture, pts: Option<i64>, color: ColorInfo) -> Frame {
+///
+/// A frame has one `bit_depth`, which the conversion and the shader read
+/// every plane at. When luma and chroma differ (H.264 High 10 and up,
+/// H.265's range extensions), the narrower planes are shifted up to the
+/// wider depth in place, so the one depth is true of all three. The shift
+/// is exact and keeps every value's place in its range: an 8-bit 128 is a
+/// 10-bit 512.
+fn frame_from_picture(mut pic: h26x::Picture, pts: Option<i64>, color: ColorInfo) -> Frame {
+    let depth = pic.bit_depth.max(pic.bit_depth_chroma);
+    if pic.bit_depth != pic.bit_depth_chroma {
+        let (luma, chroma) = (pic.bit_depth, pic.bit_depth_chroma);
+        let planes: Vec<(usize, usize, u32)> = pic
+            .planes
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let d = if i == 0 { luma } else { chroma };
+                (p.offset, p.width as usize * p.height as usize, depth - d)
+            })
+            .collect();
+        widen(&mut pic.data, &planes);
+    }
     let layout = match pic.chroma {
         h26x::ChromaFormat::Monochrome => PixelLayout::I400,
         h26x::ChromaFormat::Yuv420 => PixelLayout::I420,
@@ -299,12 +320,49 @@ fn frame_from_picture(pic: h26x::Picture, pts: Option<i64>, color: ColorInfo) ->
     Frame {
         width: pic.width as usize,
         height: pic.height as usize,
-        bit_depth: pic.bit_depth.max(pic.bit_depth_chroma) as u8,
+        bit_depth: depth as u8,
         bytes_per_sample: bps as u8,
         layout,
         planes,
         pts,
         color,
         data: FrameData::from_picture(pic),
+    }
+}
+
+/// Shift each plane's 16-bit little-endian samples up by its own amount:
+/// `(byte offset, samples, shift)` per plane. A shift of 0 leaves the plane
+/// alone. Only called with unequal depths, where every plane is two bytes a
+/// sample.
+fn widen(data: &mut [u8], planes: &[(usize, usize, u32)]) {
+    for &(offset, samples, shift) in planes {
+        if shift == 0 {
+            continue;
+        }
+        for s in data[offset..offset + samples * 2].as_chunks_mut::<2>().0 {
+            *s = (u16::from_le_bytes(*s) << shift).to_le_bytes();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::widen;
+
+    fn words(v: &[u16]) -> Vec<u8> {
+        v.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn unequal_depths_are_widened_to_the_wider() {
+        // 8-bit luma (two samples), 12-bit chroma (one sample each): the
+        // luma moves up four bits, the chroma stays.
+        let mut d = words(&[128, 255, 2048, 4095]);
+        widen(&mut d, &[(0, 2, 4), (4, 1, 0), (6, 1, 0)]);
+        assert_eq!(d, words(&[2048, 4080, 2048, 4095]));
+        // 10-bit luma, 8-bit chroma: mid-grey stays mid-grey.
+        let mut d = words(&[512, 128, 128]);
+        widen(&mut d, &[(0, 1, 0), (2, 1, 2), (4, 1, 2)]);
+        assert_eq!(d, words(&[512, 512, 512]));
     }
 }

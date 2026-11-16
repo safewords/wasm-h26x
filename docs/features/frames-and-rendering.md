@@ -31,7 +31,7 @@ from and how deep it can be (H.265 range extensions go to 16 bits).
 The packed layout is Y then Cb then Cr, no padding (`Frame::geometry`,
 `src/frame.rs:184-213`), which is exactly what WebCodecs' `I420` expects.
 rivet-h26x's `h26x::Picture` is already cropped and packed that way, so
-`frame_from_picture` (`src/core.rs:282-310`) moves the picture into the
+`frame_from_picture` (`src/core.rs:282-331`) moves the picture into the
 frame and copies nothing: `FrameData` keeps it (`src/frame.rs:123-135`)
 and dereferences to its packed bytes, and when the frame is dropped the
 buffer goes back to the decoder's pool.
@@ -90,16 +90,17 @@ records the returned path in `stats.drawPath`.
   that is a cost per frame the 8-bit path does not have. It has not been
   measured: [`../performance.md`](../performance.md) times 8-bit clips,
   decode only, without drawing or RGBA.
-- **Unequal luma and chroma depths are reported as the wider.**
-  `bit_depth` is `max(bit_depth, bit_depth_chroma)` (`src/core.rs:302`),
-  and the conversion, like the shader, reads every plane at that one depth
-  (`src/convert.rs:175-180`). A stream whose chroma is deeper than its luma,
-  or the reverse (allowed in H.264's High 10 and higher profiles and in
-  H.265's range extensions, both of which rivet-h26x decodes at unequal
-  depths), decodes correctly but converts to the wrong colours. No fixture
-  has unequal depths: neither libx264 nor libx265 writes them. The planes
-  themselves are right; a consumer that reads them has no field telling
-  the two depths apart.
+- **Unequal luma and chroma depths are widened to the wider.** `bit_depth`
+  is `max(bit_depth, bit_depth_chroma)`, and the narrower planes are
+  shifted up to it in place as the picture becomes a frame
+  (`frame_from_picture` and `widen`, `src/core.rs`), because the conversion
+  and the shader read every plane at the frame's one depth. The shift is
+  exact: an 8-bit 128 is a 12-bit 2048. A consumer reading the planes sees
+  every plane at `bit_depth`, not the stream's own per-component depths.
+  Checked against `Bitdepth_A/B_RExt_Sony_1` (HEVC RExt conformance): 70.5
+  and 70.1 dB RGB PSNR against HM's output written at 12 bits, 5.3 and 4.2
+  dB before the shift. No fixture here has unequal depths (neither libx264
+  nor libx265 writes them, and the conformance streams are 1080p 4:4:4).
 - **Views are transient.** Any call that can decode may grow wasm memory
   and detach every `Uint8Array` over it (`src/wasm.rs:13-15`). The JS
   `Frame` rebuilds its view on each access and throws once `nextFrame()` or
@@ -114,6 +115,8 @@ records the returned path in `stats.drawPath`.
 
 ## History & references
 
+- 2026-11-16: the narrower of unequal luma and chroma depths shifted up to
+  the wider (`widen`, `src/core.rs`), with a unit test.
 - `1a7e686` (2026-11-15): `Frame` keeps the `h26x::Picture` (`FrameData`);
   the scalar conversion takes samples above 12 bits down to 12.
 - `55e3c2b` (2026-11-15): the decode Worker sends RGBA for frames above 8

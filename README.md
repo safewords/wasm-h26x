@@ -134,8 +134,9 @@ when the next frame replaces it. What is converted, and where:
 - The WebGL renderer: 8-bit frames as luminance textures with the matrix in
   the shader, no CPU conversion; frames above 8 bits (and planar GBR) from
   the RGBA conversion, which the decode Worker sends with each such frame.
-- A stream whose luma and chroma depths differ (an H.265 range-extensions
-  corner) gives two bytes for every plane and reports the wider depth.
+- A stream whose luma and chroma depths differ (H.264 High 10 and up, an
+  H.265 range-extensions corner) gives two bytes for every plane at the
+  wider depth: the narrower planes are shifted up to it.
 
 Higher up, `H26xPlayer` (canvas, pacing by pts or by an external clock,
 decode budget per animation frame, in-thread or in a Worker, stutter stats:

@@ -8,7 +8,7 @@ A release is a `v*` tag matching the version in `package.json` and
 `Cargo.toml`; `release.yml` publishes it to the GitHub Release and to npm as
 `@safewords/wasm-h26x`.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-15
 
 The first version: [wasm-av1](https://github.com/safewords/wasm-av1) 0.3.2
 for H.264 and H.265, with rivet-h26x in place of rivet-av1.
@@ -55,13 +55,17 @@ for H.264 and H.265, with rivet-h26x in place of rivet-av1.
   two-layer H.265 stream), Node (every variant, the threads builds on 1 to
   8 threads), and Playwright (33 combinations in each of Chromium, Firefox
   and WebKit). CI and release workflows as wasm-av1's.
+- **Unequal luma and chroma bit depths** (H.264 High 10 and up, H.265 range
+  extensions) come out at the wider depth with the narrower planes shifted
+  up to it, so the RGBA conversion and the WebGL shader, which read every
+  plane at the frame's one depth, show the right colours. Checked against
+  the JCT-VC streams `Bitdepth_A_RExt_Sony_1` (12-bit luma, 8-bit chroma)
+  and `Bitdepth_B_RExt_Sony_1` (the reverse): 70.5 and 70.1 dB RGB PSNR
+  against the HM reference decoder's output written at 12 bits, where the
+  depth unshifted gave 5.3 and 4.2 dB.
 
 ### Known
 
-- Unequal luma and chroma bit depths (H.264 High profiles, H.265 range
-  extensions) decode exactly, but the frame reports the wider depth and
-  the RGBA conversion and the WebGL shader read every plane at it, so such
-  a stream shows the wrong colours (docs/features/frames-and-rendering.md).
 - In one WebKit page, a few dozen threads-build instances (each with its
   own shared memory) exhaust it; reuse one decoder (docs/performance.md).
 - Pictures that are decoded but not output (`pic_output_flag` 0, a refused
