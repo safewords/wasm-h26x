@@ -178,16 +178,6 @@ impl Core {
             if ev.new_frame {
                 frames += 1;
             }
-            if ev.sps_changed {
-                // A new H.264 sequence (another rendition, a new size): its
-                // IDR picture will output every picture still waiting, and
-                // rivet-h26x would crop them with the new SPS's cropping
-                // window — the DPB keeps one window, not one per picture.
-                // Output them now, under the window they were decoded with.
-                if let Err(e) = dec.flush() {
-                    first_error.get_or_insert(e);
-                }
-            }
             if let Err(e) = dec.push_nal(nal) {
                 first_error.get_or_insert(e);
             }

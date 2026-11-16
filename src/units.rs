@@ -106,10 +106,6 @@ pub struct NalEvent {
     /// first slice of a new primary picture that is neither the second
     /// field of a pair nor a RASL picture the decoder skips.
     pub new_frame: bool,
-    /// It is an H.264 sequence parameter set that replaces a different one
-    /// of the same id: a new coded video sequence, perhaps of another size
-    /// (see `Core::send`).
-    pub sps_changed: bool,
 }
 
 /// The fields of an H.264 slice header that tell one primary coded picture
@@ -270,13 +266,10 @@ impl Tracker {
                 NalEvent {
                     starts_unit,
                     new_frame,
-                    ..NalEvent::default()
                 }
             }
             7 => {
-                let mut sps_changed = false;
                 if let Ok(sps) = h26x::h264::Sps::parse(&unescape_rbsp(&nal[1..])) {
-                    sps_changed = self.sps264.get(&sps.id).is_some_and(|old| *old != sps);
                     if let Some(vui) = &sps.vui {
                         self.color = color_from(vui.colour_description, vui.full_range);
                         // H.264 ticks are fields: a frame is two.
@@ -289,10 +282,7 @@ impl Tracker {
                     }
                     self.sps264.insert(sps.id, sps);
                 }
-                NalEvent {
-                    sps_changed,
-                    ..self.opens_unit()
-                }
+                self.opens_unit()
             }
             8 => {
                 let rbsp = unescape_rbsp(&nal[1..]);
@@ -389,7 +379,6 @@ impl Tracker {
                 NalEvent {
                     starts_unit,
                     new_frame,
-                    ..NalEvent::default()
                 }
             }
             33 => {

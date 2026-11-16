@@ -135,38 +135,55 @@ fn cmaf_segments_decode_continuously() {
     }
 }
 
+/// The pictures of the old rendition still waiting for output when the new
+/// one's SPS comes in keep their own cropping window (rivet-h26x crops each
+/// picture with the SPS it was decoded with; before f5d350e it used the
+/// newest SPS's, and a 320x180 picture came out 320x186 here).
 #[test]
 fn a_rendition_switch_at_a_segment_boundary_is_seamless() {
     let hi = fixture("h264-cabac-b-320x180");
     let lo = fixture("h264-cmaf-lo-160x90");
-    let mut dec = Decoder::new(Config {
-        max_buffered: 4,
-        threads: 1,
-    })
-    .unwrap();
-    dec.set_init_segment(read("cmaf/init.mp4")).unwrap();
-    assert_eq!(dec.push_segment(&read("cmaf/seg0.m4s")).unwrap(), 24);
-    assert_eq!(dec.push_segment(&read("cmaf/seg1.m4s")).unwrap(), 24);
-    let (first, _) = dec.last_segment_pts().unwrap();
-    let mut out = Decoded::default();
-    while out.frames.len() < 8 {
-        dec.run().unwrap();
-        while let Some(f) = dec.next_frame() {
-            out.take(f);
+    for threads in [1, 2, 4] {
+        let mut dec = Decoder::new(Config {
+            max_buffered: 4,
+            threads,
+        })
+        .unwrap();
+        dec.set_init_segment(read("cmaf/init.mp4")).unwrap();
+        assert_eq!(dec.push_segment(&read("cmaf/seg0.m4s")).unwrap(), 24);
+        assert_eq!(dec.push_segment(&read("cmaf/seg1.m4s")).unwrap(), 24);
+        let (first, _) = dec.last_segment_pts().unwrap();
+        let mut out = Decoded::default();
+        while out.frames.len() < 8 {
+            dec.run().unwrap();
+            while let Some(f) = dec.next_frame() {
+                out.take(f);
+            }
         }
+        // The decoder has not reached the boundary: replace the future there.
+        assert!(dec.next_queued_pts().unwrap() < first, "t{threads}");
+        assert_eq!(dec.truncate_queued_from(first), 24, "t{threads}");
+        dec.set_init_segment(read("cmaf-lo/init.mp4")).unwrap();
+        assert_eq!(dec.push_segment(&read("cmaf-lo/seg1.m4s")).unwrap(), 24);
+        dec.end_of_stream();
+        let rest = drain(&mut dec);
+        out.frames.extend(rest.frames);
+        out.pts.extend(rest.pts);
+        assert_eq!(out.frames.len(), 48, "t{threads}");
+        assert_eq!(
+            out.frames[..24],
+            hi.frames[..24],
+            "t{threads}: high half exact"
+        );
+        assert_eq!(
+            out.frames[24..],
+            lo.frames[24..],
+            "t{threads}: low half exact"
+        );
+        let pts: Vec<i64> = out.pts.iter().map(|p| p.unwrap()).collect();
+        assert!(
+            pts.windows(2).all(|w| w[1] - w[0] == 512),
+            "t{threads}: {pts:?}"
+        );
     }
-    // The decoder has not reached the boundary: replace the future there.
-    assert!(dec.next_queued_pts().unwrap() < first);
-    assert_eq!(dec.truncate_queued_from(first), 24);
-    dec.set_init_segment(read("cmaf-lo/init.mp4")).unwrap();
-    assert_eq!(dec.push_segment(&read("cmaf-lo/seg1.m4s")).unwrap(), 24);
-    dec.end_of_stream();
-    let rest = drain(&mut dec);
-    out.frames.extend(rest.frames);
-    out.pts.extend(rest.pts);
-    assert_eq!(out.frames.len(), 48);
-    assert_eq!(out.frames[..24], hi.frames[..24], "high half exact");
-    assert_eq!(out.frames[24..], lo.frames[24..], "low half exact");
-    let pts: Vec<i64> = out.pts.iter().map(|p| p.unwrap()).collect();
-    assert!(pts.windows(2).all(|w| w[1] - w[0] == 512), "{pts:?}");
 }
