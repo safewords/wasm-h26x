@@ -8,6 +8,28 @@ A release is a `v*` tag matching the version in `package.json` and
 `Cargo.toml`; `release.yml` publishes it to the GitHub Release and to npm as
 `@safewords/wasm-h26x`.
 
+## [0.1.1] - 2026-11-15
+
+### Fixed
+
+- **10-bit and deeper H.264 in Firefox 142 to 152 on arm64** (Apple silicon
+  Macs, Android). The SIMD builds decoded H.264 High 10 and High 4:2:2 10-bit
+  wrongly there: those Firefox versions compute the wasm instruction
+  `v128.any_true` as the sum of the two 64-bit halves
+  ([Bugzilla 2042331](https://bugzilla.mozilla.org/show_bug.cgi?id=2042331),
+  fixed in Firefox 153), so the residual kernels' "any AC coefficient
+  nonzero" test read blocks whose halves cancel (`i32x4(0, 2304, 0, -2304)`)
+  as empty and skipped their inverse transform. rivet-h26x `3fcfda9` tests
+  the two halves directly instead. Every fixture is bit-exact in Firefox 142's
+  SIMD build with it; decode time is within 3 % either way in Firefox 142 and
+  153, Chromium and WebKit. Found by decodeanywhere's end-to-end tests.
+
+### Changed
+
+- rivet-h26x and rivet-container from rivet `918d54e` (rivet-h26x `3fcfda9`).
+  The decoder is otherwise unchanged since 0.1.0; the encoder work in between
+  is not linked into these builds.
+
 ## [0.1.0] - 2026-11-15
 
 The first version: [wasm-av1](https://github.com/safewords/wasm-av1) 0.3.2

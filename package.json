@@ -1,6 +1,6 @@
 {
   "name": "@safewords/wasm-h26x",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "H.264 and H.265 decoding for the browser: rivet-h26x compiled to WebAssembly (baseline, SIMD and multi-threaded builds), with wasm-av1's streaming API, HLS/CMAF glue and WebGL rendering.",
   "license": "Apache-2.0",
   "type": "module",

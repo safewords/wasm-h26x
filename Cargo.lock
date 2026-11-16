@@ -332,7 +332,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 [[package]]
 name = "rivet-container"
 version = "0.2.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#918d54ee256a55bcd73c5b7254af6ff5f8a7f44b"
 dependencies = [
  "anyhow",
  "bytes",
@@ -349,7 +349,7 @@ dependencies = [
 [[package]]
 name = "rivet-frame"
 version = "0.2.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#918d54ee256a55bcd73c5b7254af6ff5f8a7f44b"
 dependencies = [
  "bytes",
 ]
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "rivet-h26x"
 version = "0.2.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#918d54ee256a55bcd73c5b7254af6ff5f8a7f44b"
 dependencies = [
  "thiserror 2.0.21",
 ]
@@ -365,7 +365,7 @@ dependencies = [
 [[package]]
 name = "rivet-vorbis"
 version = "0.1.0"
-source = "git+https://github.com/rivet-transcoder/rivet?branch=main#f5d350ede99030d99c1ad4e23fe60212434463cf"
+source = "git+https://github.com/rivet-transcoder/rivet?branch=main#918d54ee256a55bcd73c5b7254af6ff5f8a7f44b"
 dependencies = [
  "thiserror 2.0.21",
 ]
@@ -691,7 +691,7 @@ checksum = "9ab365ce29ba0232367502b2894556ae77a9c214d33dbf453fdba7f586905918"
 
 [[package]]
 name = "wasm-h26x"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "md-5",
