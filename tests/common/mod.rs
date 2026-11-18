@@ -81,7 +81,10 @@ pub fn fixtures() -> Vec<Fixture> {
 }
 
 pub fn md5_hex(data: &[u8]) -> String {
-    format!("{:x}", Md5::digest(data))
+    Md5::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// What came out of a decode: per frame `(width, height, md5)`, and pts.

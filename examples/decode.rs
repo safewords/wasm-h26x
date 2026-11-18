@@ -75,7 +75,7 @@ fn main() {
             all.update(&*f.data);
             if !quiet {
                 let pts = f.pts.map_or("-".into(), |p| p.to_string());
-                let md5 = format!("{:x}", Md5::digest(&*f.data));
+                let md5 = hex(&Md5::digest(&*f.data));
                 writeln!(stdout, "{n},{pts},{}x{},{md5}", f.width, f.height).unwrap();
             }
             if ppm == Some(n) {
@@ -95,12 +95,17 @@ fn main() {
     let secs = t0.elapsed().as_secs_f64();
     let s = dec.stats();
     eprintln!(
-        "{n} frames ({}, {} thread{}), {:.1} fps, {} errors, md5 of all {:x}",
+        "{n} frames ({}, {} thread{}), {:.1} fps, {} errors, md5 of all {}",
         dec.codec().map_or("?", Codec::name),
         wasm_h26x::decoder::effective_threads(dec.config()),
         if dec.config().threads > 1 { "s" } else { "" },
         n as f64 / secs,
         s.decode_errors,
-        all.finalize()
+        hex(&all.finalize())
     );
+}
+
+/// Lower-case hex: md-5 0.11's output is not `LowerHex`.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

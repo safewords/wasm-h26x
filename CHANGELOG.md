@@ -8,6 +8,14 @@ A release is a `v*` tag matching the version in `package.json` and
 `Cargo.toml`; `release.yml` publishes it to the GitHub Release and to npm as
 `@safewords/wasm-h26x`.
 
+## [Unreleased]
+
+### Changed
+
+- rivet-h26x and rivet-container move to rivet's current `main`; rivet-h26x's
+  changes there are to its encoders, so decoded output is unchanged. The
+  tests hash with md-5 0.11. The committed `pkg/` is not rebuilt.
+
 ## [0.1.1] - 2026-11-15
 
 ### Fixed
